@@ -41,6 +41,7 @@ from tunax.closure import ClosureParametersAbstract, ClosureStateAbstract
 
 
 class KepsParameters(ClosureParametersAbstract):
+
     r"""
     Parameters and constants for :math:`k-\varepsilon`.
 
@@ -212,67 +213,141 @@ class KepsParameters(ClosureParametersAbstract):
     """
 
     # k-epsilon coefficients (Umlauf and Burchard notations)
-    c1: float = 5.
-    c2: float = .8
-    c3: float = 1.968
-    c4: float = 1.136
-    c5: float = 0.
-    c6: float = .4
-    cb1: float = 5.95
-    cb2: float = .6
-    cb3: float = 1.
-    cb4: float = 0.
-    cb5: float = 0.3333
-    cbb: float = 0.72
-    c_mu0: float = 0.5477
-    sig_k: float = 1.
-    sig_eps: float = 1.3
-    c_eps1: float = 1.44
-    c_eps2: float = 1.92
-    c_eps3m: float = -.4
-    c_eps3p: float = 1.
+    c1: float
+    c2: float
+    c3: float
+    c4: float
+    c5: float
+    c6: float
+    cb1: float
+    cb2: float
+    cb3: float
+    cb4: float
+    cb5: float
+    cbb: float
+    c_mu0: float
+    sig_k: float
+    sig_eps: float
+    c_eps1: float
+    c_eps2: float
+    c_eps3m: float
+    c_eps3p: float
     # physical constants
-    chk_grav: float = 1400.
-    galp: float = .53
-    z0s_min: float = 1e-2
-    z0b_min: float = 1e-2
-    z0b: float = 1e-14
-    akt_min: float = 1e-5
-    akv_min: float = 1e-4
-    tke_min: float = 1e-6
-    eps_min: float = 1e-12
-    c_mu_min: float = .1
-    c_mu_prim_min: float = .1
+    chk_grav: float
+    galp: float
+    z0s_min: float
+    z0b_min: float
+    z0b: float
+    akt_min: float
+    akv_min: float
+    tke_min: float
+    eps_min: float
+    c_mu_min: float
+    c_mu_prim_min: float
     # physical case_tracable
-    dir_sfc: bool = False
-    dir_btm: bool = True
+    dir_sfc: bool
+    dir_btm: bool
     # GLS coefficient for k-epsilon
-    gls_p: float = 3
-    gls_m: float = 1.5
-    gls_n: float = -1
-    # limitation coefficients computed from k-epsilon coefficients
-    sf_d0: float = eqx.field(init=False)
-    sf_d1: float = eqx.field(init=False)
-    sf_d2: float = eqx.field(init=False)
-    sf_d3: float = eqx.field(init=False)
-    sf_d4: float = eqx.field(init=False)
-    sf_d5: float = eqx.field(init=False)
-    sf_n0: float = eqx.field(init=False)
-    sf_n1: float = eqx.field(init=False)
-    sf_n2: float = eqx.field(init=False)
-    sf_nb0: float = eqx.field(init=False)
-    sf_nb1: float = eqx.field(init=False)
-    sf_nb2: float = eqx.field(init=False)
-    lim_am0: float = eqx.field(init=False)
-    lim_am1: float = eqx.field(init=False)
-    lim_am2: float = eqx.field(init=False)
-    lim_am3: float = eqx.field(init=False)
-    lim_am4: float = eqx.field(init=False)
-    lim_am5: float = eqx.field(init=False)
-    lim_am6: float = eqx.field(init=False)
+    gls_p: float
+    gls_m: float
+    gls_n: float
+    # limitation coefficients
+    sf_d0: float
+    sf_d1: float
+    sf_d2: float
+    sf_d3: float
+    sf_d4: float
+    sf_d5: float
+    sf_n0: float
+    sf_n1: float
+    sf_n2: float
+    sf_nb0: float
+    sf_nb1: float
+    sf_nb2: float
+    lim_am0: float
+    lim_am1: float
+    lim_am2: float
+    lim_am3: float
+    lim_am4: float
+    lim_am5: float
+    lim_am6: float
 
-    def __post_init__(self):
-        # stability function coefficients
+    def __init__(
+            self,
+            c1: float = 5.,
+            c2: float = .8,
+            c3: float = 1.968,
+            c4: float = 1.136,
+            c5: float = 0.,
+            c6: float = .4,
+            cb1: float = 5.95,
+            cb2: float = .6,
+            cb3: float = 1.,
+            cb4: float = 0.,
+            cb5: float = 0.3333,
+            cbb: float = 0.72,
+            c_mu0: float = 0.5477,
+            sig_k: float = 1.,
+            sig_eps: float = 1.3,
+            c_eps1: float = 1.44,
+            c_eps2: float = 1.92,
+            c_eps3m: float = -.4,
+            c_eps3p: float = 1.,
+            chk_grav: float = 1400.,
+            galp: float = .53,
+            z0s_min: float = 1e-2,
+            z0b_min: float = 1e-2,
+            z0b: float = 1e-14,
+            akt_min: float = 1e-5,
+            akv_min: float = 1e-4,
+            tke_min: float = 1e-6,
+            eps_min: float = 1e-12,
+            c_mu_min: float = .1,
+            c_mu_prim_min: float = .1,
+            dir_sfc: bool = False,
+            dir_btm: bool = True,
+            gls_p: float = 3,
+            gls_m: float = 1.5,
+            gls_n: float = -1
+        ):
+        # initialisation of parameters
+        self.c1 = c1
+        self.c2 = c2
+        self.c3 = c3
+        self.c4 = c4
+        self.c5 = c5
+        self.c6 = c6
+        self.cb1 = cb1
+        self.cb2 = cb2
+        self.cb3 = cb3
+        self.cb4 = cb4
+        self.cb5 = cb5
+        self.cbb = cbb
+        self.c_mu0 = c_mu0
+        self.sig_k = sig_k
+        self.sig_eps = sig_eps
+        self.c_eps1 = c_eps1
+        self.c_eps2 = c_eps2
+        self.c_eps3m = c_eps3m
+        self.c_eps3p = c_eps3p
+        self.chk_grav = chk_grav
+        self.galp = galp
+        self.z0s_min = z0s_min
+        self.z0b_min = z0b_min
+        self.z0b = z0b
+        self.akt_min = akt_min
+        self.akv_min = akv_min
+        self.tke_min = tke_min
+        self.eps_min = eps_min
+        self.c_mu_min = c_mu_min
+        self.c_mu_prim_min = c_mu_prim_min
+        self.dir_sfc = dir_sfc
+        self.dir_btm = dir_btm
+        self.gls_p = gls_p
+        self.gls_m = gls_m
+        self.gls_n = gls_n
+
+        # stability function for limitation coefficients
         a1 = .66666666667 - .5*self.c2
         a2 = 1 - .5*self.c3
         a3 = 1 - .5*self.c4
@@ -303,25 +378,25 @@ class KepsParameters(ClosureParametersAbstract):
         lim_am4 = sf_d2*sf_n0
         lim_am5 = sf_d2*sf_n1 + sf_d3*sf_n0
         lim_am6 = sf_d3*sf_n1
-        object.__setattr__(self, 'sf_d0', sf_d0)
-        object.__setattr__(self, 'sf_d1', sf_d1)
-        object.__setattr__(self, 'sf_d2', sf_d2)
-        object.__setattr__(self, 'sf_d3', sf_d3)
-        object.__setattr__(self, 'sf_d4', sf_d4)
-        object.__setattr__(self, 'sf_d5', sf_d5)
-        object.__setattr__(self, 'sf_n0', sf_n0)
-        object.__setattr__(self, 'sf_n1', sf_n1)
-        object.__setattr__(self, 'sf_n2', sf_n2)
-        object.__setattr__(self, 'sf_nb0', sf_nb0)
-        object.__setattr__(self, 'sf_nb1', sf_nb1)
-        object.__setattr__(self, 'sf_nb2', sf_nb2)
-        object.__setattr__(self, 'lim_am0', lim_am0)
-        object.__setattr__(self, 'lim_am1', lim_am1)
-        object.__setattr__(self, 'lim_am2', lim_am2)
-        object.__setattr__(self, 'lim_am3', lim_am3)
-        object.__setattr__(self, 'lim_am4', lim_am4)
-        object.__setattr__(self, 'lim_am5', lim_am5)
-        object.__setattr__(self, 'lim_am6', lim_am6)
+        self.sf_d0 = sf_d0
+        self.sf_d1 = sf_d1
+        self.sf_d2 = sf_d2
+        self.sf_d3 = sf_d3
+        self.sf_d4 = sf_d4
+        self.sf_d5 = sf_d5
+        self.sf_n0 = sf_n0
+        self.sf_n1 = sf_n1
+        self.sf_n2 = sf_n2
+        self.sf_nb0 = sf_nb0
+        self.sf_nb1 = sf_nb1
+        self.sf_nb2 = sf_nb2
+        self.lim_am0 = lim_am0
+        self.lim_am1 = lim_am1
+        self.lim_am2 = lim_am2
+        self.lim_am3 = lim_am3
+        self.lim_am4 = lim_am4
+        self.lim_am5 = lim_am5
+        self.lim_am6 = lim_am6
 
 
 class KepsState(ClosureStateAbstract):

@@ -323,7 +323,7 @@ class CaseTracable(eqx.Module):
         constant_forcing = add_boundaries(
             -border_forcing[0], jnp.zeros(grid.nz-2), border_forcing[1]
         )
-        variable_forcing = jnp.tile(constant_forcing[:, None], (0, nt))
+        variable_forcing = jnp.tile(constant_forcing, (nt, 1))
         case_tracable = eqx.tree_at(lambda t: getattr(t, f'{tra}_forcing'), self, variable_forcing)
         dico = {f'{tra}_forcing_type': 'variable'}
         case_tracable = replace(case_tracable, **dico)
@@ -353,7 +353,7 @@ class CaseTracable(eqx.Module):
             The :code:`self` object with the promoted forcing.
         """
         constant_forcing = getattr(self, f'{tra}_forcing')
-        variable_forcing = jnp.tile(constant_forcing[:, None], (0, nt))
+        variable_forcing = jnp.tile(constant_forcing, (nt, 1))
         case_tracable = eqx.tree_at(lambda t: getattr(t, f'{tra}_forcing'), self, variable_forcing)
         dico = {f'{tra}_forcing_type': 'variable'}
         case_tracable = replace(case_tracable, **dico)

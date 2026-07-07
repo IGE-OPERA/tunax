@@ -486,7 +486,7 @@ def tracer_flux(
         case 'constant':
             df = forcing
         case 'variable':
-            df = forcing[:, i_time]
+            df = forcing[i_time, :]
         case _:
             mess = f'Forcing type of variable {tracer} should be one of' + \
                 "{'borders', 'constant', 'variable'}."

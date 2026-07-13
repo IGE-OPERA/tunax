@@ -6,7 +6,7 @@ Importation of Tunax classes and functions for shortcuts.
 from .space import Grid, State, Trajectory
 from .case import Case, CaseTracable
 from .closure import ClosureParametersAbstract, ClosureStateAbstract, Closure
-from .database import Data, Obs, Database, Weights
+from .database import Data, Obs, Weights
 from .functions import tridiag_solve, add_boundaries
 from .closures_registry import CLOSURES_REGISTRY
 from .model import (

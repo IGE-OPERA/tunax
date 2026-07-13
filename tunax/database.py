@@ -465,19 +465,3 @@ class Obs(eqx.Module):
             nt, dt, p_out, init_state, data.case, 'k-epsilon', start_time, checkpoint
         )
         return Obs(data.trajectory, model, weights)
-
-
-class Database(eqx.Module):
-    """
-    Represent a set of several observations that form a database. The constructor takes all the
-    attributes as parameters.
-
-    Attributes
-    ----------
-    observations : List[Obs]
-        A list of several observations with potentially various forcings, geometry and time
-        configuration.
-
-    """
-
-    observations: List[Obs]

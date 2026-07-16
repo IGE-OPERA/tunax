@@ -18,24 +18,22 @@ from dataclasses import replace
 from collections.abc import Callable
 from typing import Any, cast
 
-import yaml
 import xarray as xr
 import equinox as eqx
-import numpy as np
 import jax.numpy as jnp
 from h5py import File as H5pyFile
-from h5py import Dataset as H5pyDataset
 from h5py import Group as H5pyGroup
-from jaxtyping import Array, Float
 
-from tunax.space import Grid, Trajectory, TRACERS_NAMES, VARIABLE_NAMES
+from tunax.space import Grid, Trajectory, VARIABLE_NAMES
 from tunax.case import Case
 from tunax.functions import _format_to_single_line
 from tunax.model import SingleColumnModel
 
 
-DimsType: TypeAlias = tuple[Union[None, int], ...]
-"""TypeAlias : tuple of integers or None, used for of the dimensions in the loaders."""
+type TransAxisType = tuple[tuple[bool, int, tuple[int, ...]], ...]
+"""Details the projection, transposition and slicing of an array, cf. :meth:`Data.transform_arr`"""
+type TransAxisParType = tuple[tuple[bool, int, tuple[int, ...]], ...]
+"""Details the projection, transposition and slicing of an array, parametrisable version."""
 
 
 class Data(eqx.Module):
@@ -53,7 +51,7 @@ class Data(eqx.Module):
         The time-series of the variables that represent this data.
     case : Case
         The physical case that represent this data.
-    metadatas : Dict[str, float :class:`~jax.Array`], default={}
+    metadatas : dict[str, float :class:`~jax.Array`], default={}
         Some metadatas that we want to use later. They can be floats or arrays but always written in
         a JAX array.
 
@@ -67,339 +65,205 @@ class Data(eqx.Module):
 
     trajectory: Trajectory
     case: Case
-    metadatas: Dict[str, jnp.ndarray] = eqx.field(static=True)
+    metadatas: dict[str, jnp.ndarray] = eqx.field(static=True)
 
     @staticmethod
-    def _proj_dims(
-            arr: Union[H5pyDataset, np.ndarray],
-            dims: DimsType,
-            n: int
-        ) -> Float[Array, 'n']:
+    def transform_arr(
+            arr: jnp.ndarray,
+            trans_axis: TransAxisType,
+        ) -> jnp.ndarray:
         """
-        Projection of the loaded data on the right dimension (only one dimension).
+        Projection, transposition and slice of the input array.
 
-        First, the one dimension is selected in `arr`, the one corresponding to the `None` in `dims`
-        and projected in the indexes of the other parameters. Then the borders are deleted to make
-        keep the middle part of the array of shape `n`. The function also do the conversion in JAX.
+        The input array `arr` is transformed by projection on some axis, transposition of the
+        resulting axis, and eventual slicing of them. There is an option for automatic slice giving
+        expected size of the output array.
 
         Parameters
         ----------
-        arr : h5py Dataset or numpy array
+        arr : float :class:`~jax.Array`
             Array on which do the projection.
-        dims : typle of None and integers
-            Must contains exactly one None on the dimension on which select the array. The other
-            integers are the indexes of selection of the data.
-        n : int
-            Size of the output array
+        trans_axis : TransAxisType
+            This object contains the information of the transformation of each axis. The number of
+            element must be the same as the number of axis of `arr`. Each element has 3 components :
+            - A boolean, indicates whether we keep this axis on the ouput (if True), or if we
+            project on a certain index of this axis.
+            - An integer. If the boolean is True, it indicates the position of the axis in the
+            output array (there will be a transposition if these numbers are not in the order). I
+            the boolean is False, it indicates the index on which do the projection of `arr` for the
+            output array.
+            - A tuple of integer indicating the slicing to do. There are 4 possibilities :
+                - If the tuple is empty, there is no slicing, all the data of the axis is kept.
+                - If the tuple has 1 integer, it indicates the expected size of the array, it will
+                keep the center of array by removing symetrically the bounds of the array on this
+                axis.
+                - If the tuple has 2 or 3 integers, it behaves like a normal slice (start, stop) or
+                (start, stop, step).
         
         Returns
         -------
-        projected_arr : float :class:`~jax.Array` of shape (n)
-            Array arr projected on the good dimension and cuted on the edges to get the right size.
+        transformed_arr : float :class:`~jax.Array`
+            Array `arr` projected, transposed and sliced on all the axis.
         """
-        if len(arr.shape) != len(dims):
-            raise ValueError(_format_to_single_line(f"""
-                The tuple parameter `dims` of value must have the length of the array `arr` readed
-                from the file.
+        if len(arr.shape) != len(trans_axis):
+            raise ValueError(_format_to_single_line("""
+                The tuple parameter `trans_axis` must have the length of the number of dimensions of
+                the input array `arr`.
             """))
-        if dims.count(None) != 1:
-            raise ValueError(_format_to_single_line(f"""
-                The tuple parameter `dims` must contains exactly one None.
-            """))
-        dims_slice = tuple(slice(None) if x is None else x for x in dims)
-        arr_1d = arr[dims_slice]
-        double_shift = arr_1d.shape[0] - n
-        shift = double_shift//2
-        if double_shift%2 == 1:
-            warnings.warn(_format_to_single_line(f"""
-                The size of the loaded array minus n is an odd number : the removed boundaries are
-                taken 1 point thinner on the bottom side than on the surface side.
-            """))
-        return jnp.array(arr_1d[shift:shift+n])
-
+        slices = []
+        trans = []
+        for i_axis, axis in enumerate(trans_axis):
+            do_axis, i_proj_trans, sl_i = axis
+            if do_axis:
+                if len(sl_i) == 0:
+                    sl = slice(None)
+                elif len(sl_i) == 1:
+                    size_in, size_out = arr.shape[i_axis], sl_i[0]
+                    double_bouds = size_in - size_out
+                    if double_bouds < 0:
+                        raise ValueError(_format_to_single_line(f"""
+                            The size of the input array is smaller than the expected size of the
+                            output array for axis n°{i_axis}.
+                        """))
+                    if double_bouds%2 == 1:
+                        warnings.warn(_format_to_single_line(f"""
+                            The size of the input array minus the expected size of the output array
+                            is an odd number : the removed boundaries are taken 1 point thinner on
+                            the left than on the right, for axis n°{i_axis}.
+                        """))
+                    bounds = double_bouds//2
+                    sl = slice(bounds, bounds+size_out)
+                elif len(sl_i) == 2 or len(sl_i) == 3:
+                    sl = slice(*sl_i)
+                else:
+                    raise ValueError(_format_to_single_line(f"""
+                            The number of element in the slice typle of `trans_axis` for axis
+                            n°{i_axis} must be at maximum 3.
+                        """))
+                slices.append(sl)
+                trans.append(i_proj_trans)
+            else:
+                slices.append(i_proj_trans)
+        proj_sliced_arr = arr[tuple(slices)]
+        return jnp.transpose(proj_sliced_arr, axes=trans)
 
     @staticmethod
-    def _get_var_jl(
-            jl_file: H5pyFile,
-            var_names: Dict[str, str],
-            var: str,
-            n: int,
-            dims_mapping: Union[DimsType, Dict[str, DimsType]] = (None,),
+    def _get_val(
+            file: H5pyFile | xr.Dataset,
+            var_name: str,
+            var_map: dict[str, str],
+            trans_axis_mapping: dict[str, TransAxisType] | None = None,
             suffix: str = ''
-        ) -> Float[Array, 'n']:
+        ) -> jnp.ndarray:
         """
-        This function retrieves the right value of a variable in a .jld2 file.
+        Shortcut for the loading a data in a read file.
 
-        This function retrives first the raw data that corresponding to the variable var (name from
-        Tunax) in accord to the names registry var_names, with an eventual suffix at the end. In a
-        second time it will project in the good dimensions the raw data with the indications in dims
-        to get a one-dimension array. And finally it will remove the eventual borders by taking the
-        middle part of the array of lenght n.
-        
         Parameters
         ----------
-        jl_file : H5pyFile
-            A .jld2 file loaded with the package h5py.
-        var_names : Dict[str, str]
-            The reference on which search the variable on the file, the keys are the Tunax names of
-            variables and the values are the names in the file (which are actually paths).
-        var : str
-            The name of the variable to search in terms of Tunax.
-        n : int
-            The excpected lenght of the variable. The function will keep the middle part of lenght n
-            on the array that it will directly extract from the file.
-        dims_mapping : DimsType or Dict[str, DimsType], default=(None,)
-            It contains the dimensions on which search the right array. If it's a dictionnary, it's
-            like var_names, the keys are the names of the variables in terms of Tunax and the values
-            are the dimensions for each variable. Then we have a Tuple of int or Nones which
-            corresponds at every axis of the raw data from the file. If an axis is indexed with
-            None, it means that we keep this dimension, if an axis is indexed with an integer, it
-            means that we reduce this axis to the value of the raw data on this index.
-        suffix : str, default=''
-            A string suffix to add at the end of the path that is in var_names.
-
+        file : H5pyFile or xr.Dataset
+            Imported file, works with .jld2 file (type = H5pyFile) or .nc file (type=xr.Dataset).
+        var_name : str
+            Name of the variable in Tunax.
+        data_map : dict[str, str]
+            Contains the link between the Tunax names of variables and the path of the variables in
+            the file. This is on of the 4 sub dictionnary of the parameter `names_mapping` of
+            `Data._load`.
+        trans_axis_mapping : dict[str, TransAxisType], default = None
+            Mapping of the transformation (projection, transposition and slicing) for each variable
+            that has to be transformed by Data.transform_arr. If `var_name` is not in this
+            dictionnary or if this parameter is None, no transformation is applied.
+        suffix : str = ''
+            Suffix to add at the end of the name in the file. Can be used for the variables that
+            are separated in time for example.
+        
         Returns
         -------
-        arr : float :class:`~jax.Array` of shape (n)
-            Value of the right array in the :code:`.jld2` file.
+        arr : jnp.ndarray
+            Array of the variable `var_name` in the `file` potentially transformed by the parameters
+            in `trans_axis_mapping`.
         """
-        jl_var = cast(H5pyDataset, jl_file[f'{var_names[var]}{suffix}'])
-        if isinstance(dims_mapping, dict):
-            dims = dims_mapping[var]
+        arr = jnp.array(file[f'{var_map[var_name]}{suffix}'])
+        if trans_axis_mapping is None or var_name not in trans_axis_mapping.keys():
+            return arr
+        return Data.transform_arr(arr, trans_axis_mapping[var_name])
+
+    @staticmethod
+    def replace_nz_expr(sl: tuple[int | str, ...], nz: int) -> tuple[int, ...]:
+        """
+        Replace 'nz' by the value of `nz` in the tuple `sl`.
+
+        This method only modify the tuple when it's a singleton containing the string 'nz' plus or
+        minus 1 or 2. If it's another string or or if `sl` doesn't contains only integers, it will
+        returns an error.
+
+        Parameters
+        ----------
+        sl : tuple of integers or string
+            Can be a singleton with the string 'nz' (+ or - 1 or 2) or a tuple with only integers.
+        nz : int
+            Value of nz to replace in the tuple.
+        
+        Returns
+        -------
+        sl_eval : tuple of integers
+            Tuple `sl` with the replaced value of `nz` in the 'nz' string.
+        """
+        if len(sl) == 1:
+            match sl[0]:
+                case 'nz':
+                    return (nz,)
+                case 'nz+1':
+                    return (nz+1,)
+                case 'nz+2':
+                    return (nz+2,)
+                case 'nz-1':
+                    return (nz-1,)
+                case 'nz-2':
+                    return (nz-2,)
+            if isinstance(sl[0], str):
+                raise ValueError(_format_to_single_line("""
+                    Only nz + or - 1 or 2 is possible for transformation.
+                """))
+            return cast(tuple[int, ...], sl)
         else:
-            dims = dims_mapping
-        return Data._proj_dims(jl_var, dims, n)
+            if all(isinstance(x, int) for x in sl):
+                return cast(tuple[int, ...], sl)
+            raise ValueError(_format_to_single_line("""
+                If the input tuple contains more than 1 element, they all must be integers.
+            """))
 
-
-    @classmethod
-    def _load_jld2(
-            cls,
-            jld2_path: str,
-            names_mapping: Dict[str, Dict[str, str]],
-            nz: Optional[int] = None,
-            dims_mapping: Union[DimsType, Dict[str, DimsType]] = (None,)
-        ) -> Tuple[Data, Dict[str, jnp.ndarray]]:
-        """
-        Creates a :class:`Data` instance from a :code:`.jld2` file.
-
-        For the scalar parameters, the values must be registered in the file simply with their path
-        in the file, separated with :code:`/` in the same string. For the timeseries and the time,
-        the arrays of each time step must be register with a path that ends with the reference of
-        the time. For the other variables, just register the normal path. The time is appriximated
-        to the order of the second.
-
-        Parameters
-        ----------
-        jld2_path : str
-            Path of the *netcdf* file that contains the time-series of the observation trajectory
-            and the physical parameters and forcings.
-        names_mapping : Dict[str, Dict[str, str]]
-            Contains the link between the Tunax names of variables and the path of the variables in
-            the file. There are 4 first entries :
-            - :code:`variables` : for all the variables corresponding to the :class:`space.Grid` and
-              the :class:`space.Trajectory`. For the grid attributes (:attr:`space.Grid.zr` and
-              :attr:`space.Grid.zw`) the path should correspond directly to the array in the file.
-              For the time and the time-series, the given path corresponds to a path with all the
-              reference (with a number in string) of the time, and then in these path with the time
-              we have the array of the variable (or the float corresponding to the value of the
-              time) at the time with this reference. Then the 2D arrays are rebuild by
-              concatenation. The references of the time are get with the path of the time data.
-            - :code:`parameters` : for all the scalar entries corresponding directly to the
-              parameters of :class:`case.Case`
-            - :code:`metadatas` : for the entries that we want to keep in the :attr:`metadatas` for
-            later.
-            - :code:`adjust_params` : for the parameters entries that are used by the adjusting
-            function later.
-        nz : int, optionnal, default=None
-            Expected number of steps of the grid of the water column. The method will remove the
-            borders of the raw data from the file to keep only the middle part of this lenght. If
-            nothing is entered for this parameter, the value is loaded from the variables mapping,
-            if nothing is registered, the value will be loaded from the size of the entry
-            :code:`'zr'`.
-        dims_mapping : DimsType or Dict[str, DimsType], default=(None,)
-            It contains the dimensions on which search the right arrays. If it's a dictionnary,
-            it's like :code:`var_names`, the keys are the names of the variables in terms of Tunax
-            and the values are the dimensions for each variable. Then we have a Tuple of int or
-            Nones which corresponds at every axis of the raw data from the file. If an axis is
-            indexed with None, it means that we keep this dimension, if an axis is indexed with an
-            integer, it means that we reduce this axis to the value of the raw data on this index.
-        
-        Returns
-        -------
-        data : Data
-            An object containing the trajectory, the physical case and the metadata in this file.
-        adjust_parameters_load : Dict[str, jnp.ndarray]
-            An dictionnary with the parameters of an eventual adjusting function used in
-            :meth:`load`.
-        """
-        var_map = names_mapping['variables']
-        par_map = names_mapping['parameters']
-        # read .jl file
-        jl = H5pyFile(jld2_path, 'r')
-        # load nz
-        if nz is None:
-            if 'nz' in var_map.keys():
-                ds = cast(H5pyDataset, jl[var_map['nz']])
-                nz = int(ds[()])
-            else:
-                if isinstance(dims_mapping, dict) and 'zr' in dims_mapping.keys():
-                    i_zr = dims_mapping['zr'].index(None)
-                else:
-                    i_zr = 0
-                ds = cast(H5pyDataset, jl[var_map['zr']])
-                nz = int(ds.shape[i_zr])
-        # load grid et time
-        zr = jnp.array(Data._get_var_jl(jl, var_map, 'zr', nz, dims_mapping))
-        zw = jnp.array(Data._get_var_jl(jl, var_map, 'zw', nz+1, dims_mapping))
-        time_group = var_map['time']
-        gr = cast(H5pyGroup, (jl[time_group]))
-        time_str_list = list(gr.keys())
-        time_str_list = [int(i) for i in time_str_list]
-        time_str_list.sort()
-        time_str_list = [str(i) for i in time_str_list]
-        time_float_list = []
-        for time_str in time_str_list:
-            ds = cast(H5pyDataset, jl[f'{time_group}/{time_str}'])
-            time_val = float(int(ds[()]))
-            time_float_list.append(float(time_val))
-        time = jnp.array(time_float_list)
-        # load variables
-        variables_dict = {}
-        for var_name in VARIABLE_NAMES:
-            if var_name not in var_map:
-                continue
-            var_list = []
-            for time_str in time_str_list:
-                var_time = Data._get_var_jl(jl, var_map, var_name, nz, dims_mapping, f'/{time_str}')
-                var_list.append(var_time)
-            variables_dict[var_name] = jnp.vstack(var_list)
-        # generate trajectory
-        trajectory = Trajectory(Grid(zr, zw), time, **variables_dict)
-        # generate parameters
-        params = {}
-        for par_name, jl_name in par_map.items():
-            if jl_name in jl.keys():
-                ds = cast(H5pyDataset, jl[jl_name])
-                params[par_name] = float(ds[()])
-        case = Case(**params)
-        # generate metadatas
-        metadatas = {}
-        for metadata_name, jl_name in names_mapping['metadatas'].items():
-            if jl_name in jl.keys():
-                ds = cast(H5pyDataset, jl[jl_name])
-                jl_val = ds[()]
-                metadatas[metadata_name] = jnp.array(jl_val)
-        # adjust parameters
-        adjust_parameters_load = {}
-        for par_name, jl_name in names_mapping['adjust_params'].items():
-            if jl_name in jl.keys():
-                ds = cast(H5pyDataset, jl[jl_name])
-                jl_val = ds[()]
-                if isinstance(jl_val, np.ndarray) or isinstance(jl_val, int) or \
-                isinstance(jl_val, float):
-                    adjust_parameters_load[par_name] = jnp.array(jl_val)
-        return cls(trajectory, case, metadatas), adjust_parameters_load
-
-    @classmethod
-    def _load_nc(
-            cls,
-            nc_path: str,
-            names_mapping: Dict[str, Dict[str, str]],
-        ) -> Tuple[Data, Dict[str, jnp.ndarray]]:
-        """
-        Pre-load of a netCDF file.
-
-        This class method build a trajectory and the physical parameters from the :code:`.nc`
-        file :code:`nc_path`. :code:`names_mapping` is used to do the link between Tunax name
-        convention and the one from the used database. This is only a pre-load because the user
-        might want to adjust the Data later with the method :meth:`load`.
-
-        Parameters
-        ----------
-        nc_path : str
-            Path of the *netcdf* file that contains the time-series of the observation trajectory.
-            The file should contains at least the three dimensions :attr:`~space.Grid.zr`,
-            :attr:`~space.Grid.zw` and :attr:`~space.Trajectory.time`. The time-series must have the
-            good dimensions described in :class:`~space.Trajectory`.
-        names_mapping : Dict[str, Dict[str, str]]
-            Contains the link between the Tunax names of variables and the path of the variables in
-            the file. There are 4 first entries :
-            - :code:`variables` : for all the variables corresponding to the :class:`space.Grid` and
-              the :class:`space.Trajectory`.
-            - :code:`parameters` : for all the scalar entries corresponding directly to the
-              parameters of :class:`case.Case`
-            - :code:`metadatas` : for the entries that we want to keep in the :attr:`metadatas` for
-            later.
-            - :code:`adjust_params` : for the parameters entries that are used by the adjusting
-            function later.
-        
-        Returns
-        -------
-        data : Data
-            An object containing the trajectory, the physical case and the metadata in this file.
-        adjust_parameters_load : Dict[str, jnp.ndarray]
-            An dictionnary with the parameters of an eventual adjusting function used in
-            :meth:`load`.
-        """
-        var_map = names_mapping['variables']
-        par_map = names_mapping['parameters']
-        # read .nc file
-        ds = xr.load_dataset(nc_path)
-        # load grid et time
-        zr = jnp.array(ds[var_map['zr']].values)
-        zw = jnp.array(ds[var_map['zw']].values)
-        grid = Grid(zr, zw)
-        time = jnp.array(ds[var_map['time']].values)
-        # load variables
-        variables_dict = {}
-        for var_name in VARIABLE_NAMES:
-            if var_name not in var_map:
-                continue
-            variables_dict[var_name] = jnp.array(ds[var_map[var_name]].values)
-        # generate trajectory
-        trajectory = Trajectory(grid, time, **variables_dict)
-        # generate case
-        params = {}
-        for par_name, nc_name in par_map.items():
-            if nc_name in ds.keys():
-                params[par_name] = float(ds[nc_name])
-        case = Case(**params)
-        # generate metadatas
-        metadatas = {}
-        for metadata_name, nc_name in names_mapping['metadatas'].items():
-            if nc_name in ds.keys():
-                metadatas[metadata_name] = jnp.array(ds[nc_name])
-        # adjust parameters
-        adjust_parameters_load = {}
-        for par_name, nc_name in names_mapping['adjust_params'].items():
-            if nc_name in ds.keys():
-                adjust_parameters_load[par_name] = jnp.array(ds[nc_name])
-        return cls(trajectory, case, {}), adjust_parameters_load
-    
     @classmethod
     def load(
             cls,
-            file_path: str,
-            names_mapping: Dict[str, Dict[str, str]],
-            adjust_fun: Optional[Callable[[Data, Dict[str, Any]], Data]] = None,
-            adjust_fun_pars_out: Optional[Dict[str, Any]] = None,
-            nz: Optional[int] = None,
-            dims_mapping: Union[DimsType, Dict[str, DimsType]] = (None,)
+            file_path: Path | str,
+            names_mapping: dict[str, dict[str, str]],
+            trans_axis_mapping: dict[str, TransAxisParType] | None = None,
+            adjust_fun: Callable[[Data, dict[str, Any]], Data] | None = None,
+            adjust_fun_pars_out: dict[str, Any] | None = None,
+            time_sep: bool = False
         ) -> Data:
         """
-        Creates a :class:`Data` instance from a :code:`.jld2` or a :code:`.nc` file.
+        Global loader of :code:`.nc` and :code:`.jld2` files in a Data object.
 
-        A trajectory, a physical case, and some metadatas are loaded from the file to create the
-        Tunax Data instance. Some parameters can be loaded from the file to be used in a adjusting
-        function which deals with the parameters and attribute that needs a transformation after
-        loading (for example variable forcings). The rtacers for the equation of state (eos) are
-        automatically chosen with the presence of the tracers in the file (by order of priority 'b',
-        't', 's' and 'ts' are chosen). do_pt is set on True if there is a passive tracer on the
-        file.
+        The file must contain at least the element to build a :class:`~space.Grid` and a
+        :class:`~space.Trajectory`. It might also contains some parameters used to describe the
+        :class:`~case.Case`, and some other used do add :attr:`metadatas`. It uses the mapping
+        :code:`names_mapping` to make the link between the Tunax variables and the keys to access to
+        the file variables. It is also possible to adjust the Data obtained by the simple file
+        loading, using the function :code:`adjust_fun` which can modify all the Data, for example
+        if we want to compute variable forcings we have to use it. Note that this function  can
+        take arguments read from the file and arguments give by the user in
+        :code:`ajust_fun_pars_out`. If the data is the file needs some transformation before going
+        in the :class:`~space.Trajectory`, one can use the parameter :code:`trans_axis_mapping`.
+        Some :code:`.jld2` files come with the timeseries separated in the different time-steps, one
+        can use :code:`time_sep` to handle this. Finally, the presence of a passive tracer
+        (:attr:`~case.Case.do_pt`) and the equation of state tracers
+        (:attr:`~case.Case.eos_tracers`) are automatically detected (by order of priority 'b',
+        't', 's' and 'ts').
 
-        Parameters
+        arameters
         ----------
-        file_path : str
+        file_path : Path or str
             Path of the file to load that contains the time-series of the observation trajectory
             and the physical parameters and forcings. It must end with :code:`.jld2` or a
             :code:`.nc`.
@@ -414,34 +278,121 @@ class Data(eqx.Module):
             later.
             - :code:`adjust_params` : for the parameters entries that are used by the adjusting
             function later.
-            For :code:`.nc` files these are strings, for :code:`.jld2` the syntax is special, cf.
-            :meth:`_load_jld2` method.
-        adjust_fun : Callable[[Data, Dict[str, Any]], Data], optionnal, default=None
+            For :code:`.nc` files these are strings, for :code:`.jld2` they can use '/' to describe
+            the tree structure.
+        trans_axis_mapping : dict[str, TransAxisParType], optionnal
+            Can contain the information of the transformation (projection, transposition and
+            slicing) to apply when the variables are loaded. For each variable that has to be
+            transformed, an object TransAxisParType is used, check :meth:`transform_arr` for the
+            syntax. There is a possibility to just ask for an array lenght. Note that :code:`nz` can
+            be imported from the file and its valuecan replace the strings :code:`'nz` in the object
+            using :meth:`replace_nz_expr`.
+        adjust_fun : Callable[[Data, Dict[str, Any]], Data], optionnal
             This is a adjusting function, taking the loaded data and some parameters in a
             dictionnary, it returns a modified version of the data. This function can be used to
             implement variable forcings or special transformations of parameters. The parameters are
             the mix of :par:`adjust_fun_pars_out` and the parameters that are loaded from the file
             with the :code:`adjust_params` of :par:`names_mapping`.
-        adjust_fun_pars_out : Dict[str, Any], optionnal, default = None
-            Parameters to put in :par:`adjust_fun`.
-        nz : int, optionnal, default=None
-            Only for :code:`.jld2` files, cf. :meth:`_load_jld2` method.
-        dims_mapping : DimsType or Dict[str, DimsType], optionnal, default=(None,)
-            Only for :code:`.jld2` files, cf. :meth:`_load_jld2` method.
+        adjust_fun_pars_out : Dict[str, Any], optionnal
+            Parameters to put in :par:`adjust_fun` in addition to those read in the file.
+        time_sep : bool, default=False
+            Works only for :code:`.jld2` files. If the timeseries of the variables are indexed as
+            one 1D array by time-step, put this attribute to True. It will read the indexes of the
+            time and read the 1D arrays separately to concatenate them at the end.
         
         Returns
         -------
         data : Data
             An object that represent these file.
+
+        Warning
+        -------
+        Be aware, this function ignore the parameters that are not convertible in JAX arrays.
         """
+        # read file
         if Path(file_path).suffix == '.nc':
-            data, adjust_pars_load = cls._load_nc(file_path, names_mapping)
-        elif Path(file_path).suffix == '.jld2':    
-            data, adjust_pars_load = cls._load_jld2(file_path, names_mapping, nz, dims_mapping)
+            file = xr.load_dataset(file_path)
+        elif Path(file_path).suffix == '.jld2':
+            file = H5pyFile(file_path, 'r')
         else:
-            raise ValueError(_format_to_single_line(f"""
+            raise ValueError(_format_to_single_line("""
                 The load method only handle .jld2 and .nc files.
             """))
+        # mappings
+        var_map = names_mapping['variables']
+        par_map = names_mapping['parameters']
+        md_map = names_mapping['metadatas']
+        ap_map = names_mapping['adjust_params']
+        # load nz
+        if 'nz' in var_map.keys():
+            nz = int(Data._get_val(file, 'nz', var_map, trans_axis_mapping))
+        else:
+            zr = Data._get_val(file, 'zr', var_map, trans_axis_mapping)
+            nz = zr.shape[0]
+        # replace potential 'nz' in trans_axis_mapping
+        if trans_axis_mapping is not None:
+            trans_axis_mapping = {
+                var: tuple((b, i, Data.replace_nz_expr(sl, nz)) for b, i, sl in proj_axis)
+                for var, proj_axis in trans_axis_mapping.items()
+            }
+        # load grid
+        zr = Data._get_val(file, 'zr', var_map, trans_axis_mapping)
+        zw = Data._get_val(file, 'zw', var_map, trans_axis_mapping)
+        # load time
+        if time_sep:
+            gr = cast(H5pyGroup, (file[var_map['time']]))
+            time_int_sorted_list = sorted([int(i) for i in list(gr.keys())])
+            time_str_list = [str(i) for i in time_int_sorted_list]
+            time_float_list = []
+            for time_str in time_str_list:
+                time_float_list.append(float(Data._get_val(
+                    file, 'time', var_map, None, f'/{time_str}')
+                ))
+            time = jnp.array(time_float_list)
+        else:
+            time = Data._get_val(file, 'time', var_map, trans_axis_mapping)
+        # load variables
+        variables_dict = {}
+        for var_name in VARIABLE_NAMES:
+            if var_name not in var_map:
+                continue
+            if time_sep:
+                var_list = []
+                for time_str in time_str_list: # pyright: ignore[reportPossiblyUnboundVariable]
+                    var_list.append(Data._get_val(
+                        file, var_name, var_map, trans_axis_mapping, f'/{time_str}'
+                    ))
+                variables_dict[var_name] = jnp.vstack(var_list)
+            else:
+                variables_dict[var_name] = Data._get_val(
+                    file, var_name, var_map, trans_axis_mapping
+                )
+        # generate trajectory
+        trajectory = Trajectory(Grid(zr, zw), time, **variables_dict)
+        # generate parameters
+        params = {}
+        for par_name, file_par_name in par_map.items():
+            if file_par_name in file.keys():
+                try:
+                    params[par_name] = float(Data._get_val(file, par_name, par_map))
+                except TypeError:
+                    pass
+        case = Case(**params)
+        # generate metadatas
+        metadatas = {}
+        for metadata_name, file_md_name in md_map.items():
+            if file_md_name in file.keys():
+                metadatas[metadata_name] = Data._get_val(file, metadata_name, md_map)
+        # adjust parameters
+        adjust_pars_load = {}
+        for par_name, file_par_name in ap_map.items():
+            if file_par_name in file.keys():
+                try:
+                    adjust_pars_load[par_name] = Data._get_val(file, par_name, ap_map)
+                except TypeError:
+                    pass
+        # creation of data instance
+        data = cls(trajectory, case, metadatas)
         # check for constant time step
         time = data.trajectory.time
         steps = time[1:] - time[:-1]

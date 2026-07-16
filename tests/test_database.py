@@ -1,24 +1,25 @@
 """
-Unit tests for the module tunax.database
+Tests for the module tunax.database
 
 """
+
+from pathlib import Path
+from typing import cast
 
 import pytest
 import jax.numpy as jnp
 import numpy as np
 from h5py import File as H5pyFile
-from h5py import Dataset as H5pyDataset
-from pathlib import Path
-from tunax.database import Data, DimsType
-from typing import cast, Dict, Any
-from dataclasses import replace
-import equinox as eqx
+
+from tunax.database import Data, TransAxisParType
+
+from .conf_test import LES_PATH, LES_MAPPING, adjust_fun
 
 
-nc_path = Path('tests') / 'data' / 'test_database' / 'test.nc'
-jld2_path = Path('tests') / 'data' / 'test_database' / 'test.jld2'
+LES_JLD2_PATH = Path('tests') / 'data' / 'test_database' / 'les_6h_4m_free_convection.jld2'
+"""Path pointing to the 6h, 4m, free convection LES from the database in the .jld2 versions"""
 
-jld2_names_mapping: Dict[str, Dict[str, str]] = {
+JLD2_LESFC_NAMES_MAPPING: dict[str, dict[str, str]] = {
     'variables': {
         'time': 'timeseries/t',
         'zr': 'grid/zᵃᵃᶜ',
@@ -36,134 +37,188 @@ jld2_names_mapping: Dict[str, Dict[str, str]] = {
     'metadatas': {},
     'adjust_params': {
         'b_sfc': 'parameters/buoyancy_flux',
-        'zc_m': 'parameters/tracer_forcing_depth',
         'omega_p_inv': 'parameters/tracer_forcing_timescale',
         'lambda_c': 'parameters/tracer_forcing_width',
+        'zc_m': 'parameters/tracer_forcing_depth',
         'jb': 'parameters/penetrating_buoyancy_flux'
     }
 }
-jld2_dims_mapping = cast(Dict[str, DimsType], {
-    'zr': (None,),
-    'zw': (None,),
-    'u': (None, 0, 0),
-    'v': (None, 0, 0),
-    'b': (None, 0, 0),
-    'pt': (None, 0, 0)
+"""Mapping of variables for .jld2 file."""
+
+JLD2_TRANS_AXIS_MAPPING_STR_INT = cast(dict[str, TransAxisParType], {
+    'zr': ((True, 0, (64,)),),
+    'zw': ((True, 0, ('nz+1',)),),
+    'u': ((True, 0, ('nz',)), (False, 0, ()), (False, 0, ()),),
+    'v': ((True, 0, ('nz',)), (False, 0, ()), (False, 0, ()),),
+    'b': ((True, 0, (64,)), (False, 0, ()), (False, 0, ()),),
+    'pt': ((True, 0, (64,)), (False, 0, ()), (False, 0, ()),)
 })
-nc_names_mapping: Dict[str, Dict[str, str]] = {
-    'variables': {
-        'time': 'time',
-        'zr': 'zr',
-        'zw': 'zw',
-        'u': 'u',
-        'v': 'v',
-        'b': 'b',
-        'pt': 'pt'
-    },
-    'parameters': {
-        'grav': 'grav',
-        'fcor': 'fcor',
-        'ustr_sfc': 'ustr_sfc'
-    },
-    'metadatas': {},
-    'adjust_params': {
-        'b_sfc': 'b_sfc',
-        'omega_p_inv': 'pt_timescale',
-        'lambda_c': 'pt_width',
-        'zc_m': 'pt_depth',
-        'lz': 'pt_lz',
-        'jb': 'b_sunny_flux',
-        'eps1': 'b_eps1',
-        'lambda1': 'b_lambda1',
-        'lambda2': 'b_lambda2'
-    }
+"""Correct definition of projection and slicing for the .jld2 file."""
+
+ADJUST_FUN_PARS_JLD2 = {
+    'forcing': 'free_convection',
+    'lz': -256,
+    'eps1': .6,
+    'lambda1': 1.,
+    'lambda2': 16.
 }
+"""Parameters to complete the adjusting function (they are not written in the .jld2 file)."""
 
-def test__proj_dims():
-    # no cut with 2 dimensions
-    arr = np.arange(20).reshape(4, 5)
-    result = Data._proj_dims(arr, (None, 2), 4)
-    np.testing.assert_array_equal(np.asarray(result), np.array([2, 7, 12, 17]))
-    # even number cut
-    arr = np.arange(10)
-    result = Data._proj_dims(arr, (None,), 6)
-    np.testing.assert_array_equal(np.asarray(result), np.array([2, 3, 4, 5, 6, 7]))
-    # odd number cut
-    arr = np.arange(11)
+
+@pytest.mark.parametrize(
+    'arr, trans_axis, expected',
+    [
+        # no cut, 2D->1D
+        (jnp.arange(20).reshape(4, 5), ((True, 0, ()), (False, 2, ())), np.array([2, 7, 12, 17])),
+        # even number cut, 1D -> 1D
+        (jnp.arange(10), ((True, 0, (6,)),), np.array([2, 3, 4, 5, 6, 7])),
+        # 2 slice cut
+        (jnp.arange(10), ((True, 0, (2, 5)),), np.array([2, 3, 4])),
+        # 3 slice cut
+        (jnp.arange(10), ((True, 0, (1, 6, 2)),), np.array([1, 3, 5])),
+        # 2 dimensions, no cut, transposition
+        (
+            jnp.arange(20).reshape(4, 5),
+            ((True, 1, ()), (True, 0, ())),
+            jnp.arange(20).reshape(4, 5).transpose()
+        ),
+        # transposition + projection
+        (
+            jnp.arange(60).reshape(3, 4, 5),
+            ((True, 1, (),), (False, 2, (),), (True, 0, ())),
+            jnp.array([[10, 30, 50], [11, 31, 51], [12, 32, 52], [13, 33, 53], [14, 34, 54]])
+        ),
+        # transposition + projection + slices
+        (
+            jnp.arange(60).reshape(3, 4, 5),
+            ((True, 1, (1,),), (False, 2, (),), (True, 0, (1, 4))),
+            jnp.array([[31], [32], [33]])
+        )
+    ]
+)
+def test_datatransform_arr_valid(
+        arr: jnp.ndarray,
+        trans_axis: TransAxisParType,
+        expected: jnp.ndarray
+    ) -> None:
+    """
+    Tests of results for the method Data.transform_arr.
+    """
+    result = Data.transform_arr(arr, trans_axis)
+    np.testing.assert_array_equal(result, expected)
+
+@pytest.mark.parametrize(
+    'arr, trans_axis',
+    [
+        # wrong len of axis
+        (jnp.zeros((4, 5)), ((True, 0, ()),)),
+        # bounds too large
+        (jnp.arange(11), ((True, 0, (12,)),)),
+        # wrong input tuple
+        (jnp.arange(11), ((True, 0, (12,), 0),))
+    ]
+)
+def test_transform_arr_invalid(
+        arr: jnp.ndarray,
+        trans_axis: TransAxisParType
+    ) -> None:
+    """
+    Tests of errors for the method Data.transform_arr.
+    """
+    with pytest.raises(ValueError):
+        Data.transform_arr(arr, trans_axis)
+
+def test_datatransform_arr_odd() -> None:
+    """
+    Test of result and warning for the method Data.transform_arr for an off number slice.
+    """
+    arr = jnp.arange(11)
     with pytest.warns(UserWarning):
-        result = Data._proj_dims(arr, (None,), 6)
-        np.testing.assert_array_equal(np.asarray(result), np.array([2, 3, 4, 5, 6, 7]))
-    # wrong len of dims
-    arr = np.zeros((4, 5))
-    with pytest.raises(ValueError):
-        Data._proj_dims(arr, (None,), 4)
-    # wrong number of None in dims
-    arr = np.zeros((4, 5))
-    with pytest.raises(ValueError):
-        Data._proj_dims(arr, (None, None), 4)
-    # empty dimensions from jld2 file (test on shapes)
-    jl = H5pyFile(jld2_path, 'r')
-    arr = cast(H5pyDataset, jl['timeseries/b/0'])
-    assert Data._proj_dims(arr, (None, 0, 0), 64).shape == (64,)
+        result = Data.transform_arr(arr, ((True, 0, (6,)),))
+        np.testing.assert_array_equal(result, np.array([2, 3, 4, 5, 6, 7]))
 
-def test__load_jld2():
-    # error test on importation (case nz=None)
-    _, _ = Data._load_jld2(str(jld2_path), jld2_names_mapping, None, jld2_dims_mapping)
-    # error test on importation (case nz=64)
-    _, _ = Data._load_jld2(str(jld2_path), jld2_names_mapping, 64, jld2_dims_mapping)
+def test_datatransform_arr_jld2():
+    """
+    Smoke test and result test for a .jld2 file array with empty dimensions for Data.transform_arr.
+    """
+    jl = H5pyFile(LES_JLD2_PATH, 'r')
+    arr = jnp.array(jl['timeseries/b/0'])
+    result = Data.transform_arr(arr, ((True, 0, (64,)), (False, 0, ()), (False, 0, ())))
+    assert result.shape == (64,)
 
-def test__load_nc():
-    # error test on importation
-    _, _ = Data._load_nc(str(nc_path), nc_names_mapping)
-
-def forcing_passive_tracer(z: float, omega_p: float, lambda_c: float, zc: float, lz: float):
-    omega_m = omega_p*lambda_c*jnp.sqrt(2*jnp.pi)/lz
-    fz = omega_p*jnp.exp(-(z-zc)**2/(2*lambda_c**2)) + omega_m
-    return  fz
-
-def forcing_buoyancy_sunny(
-        z: float,
-        jb: float,
-        eps1: float = 0.6,
-        lambda1: float = 1.,
-        lambda2: float = 16.
-    ):
-    fz = -jb*(eps1/lambda1*jnp.exp(z/lambda1) + (1-eps1)/lambda2*jnp.exp(z/lambda2))
-    return  fz
-
-def adjust_fun(data: Data, adjust_pars: Dict[str, Any]) -> Data:
-    case = data.case
-    # passive tracer forcing
-    omega_p = 1/adjust_pars['omega_p_inv']
-    lambda_c = adjust_pars['lambda_c']
-    zc_m = adjust_pars['zc_m']
-    lz = adjust_pars['lz']
-    def wrapped_forcing_pt(z: float):
-        return forcing_passive_tracer(z, omega_p, lambda_c, -zc_m, lz)
-    case = replace(case, pt_forcing=wrapped_forcing_pt)
-    # sunny forcing
-    if adjust_pars['forcing'] == 'strong_wind_and_sunny':
-        jb = adjust_pars['jb']
-        eps1 = adjust_pars['eps1']
-        lambda1 = adjust_pars['lambda1']
-        lambda2 = adjust_pars['lambda2']
-        def wrapped_forcing_b_sunny(z: float):
-            return forcing_buoyancy_sunny(z, jb, eps1, lambda1, lambda2)
-        case = replace(case, b_forcing=wrapped_forcing_b_sunny)
-    # classical buoyancy forcing
-    else:
-        case = replace(case, b_forcing=(0., adjust_pars['b_sfc']))
-    return eqx.tree_at(lambda t: t.case, data, case)
+def test_datatransform_arr_():
+    """
+    Smoke test and result test for a scalar from a .jld2 file for Data.transform_arr.
+    """
+    jl = H5pyFile(LES_JLD2_PATH, 'r')
+    arr = jnp.array(jl['parameters/coriolis_parameter'])
+    result = Data.transform_arr(arr, ())
+    assert result.shape == ()
+    assert result == 1e-4
 
 def test_load():
-    # importation without adjusting function
-    data = Data.load(str(nc_path), nc_names_mapping)
-    assert data.case.do_pt == True
+    """
+    Test of the automatic setting of passive tracer and eos_tracers.
+    """
+    data = Data.load(LES_PATH, LES_MAPPING)
+    assert data.case.do_pt is True
     assert data.case.eos_tracers == 'b'
-    # error check on importation with adjusting function
-    _ = Data.load(str(nc_path), nc_names_mapping, adjust_fun, {'forcing': 'free_convection'})
-    # error check on jld2 file
-    _ = Data.load(str(jld2_path), jld2_names_mapping, nz=64, dims_mapping=jld2_dims_mapping)
-    # other file type check
+
+def test_load_str_path():
+    """
+    Smoke test with a path defined by a string.
+    """
+    _ = Data.load(str(LES_PATH), LES_MAPPING)
+
+def test_load_adjusting_function():
+    """
+    Smoke test of the usage of an appropriate adjusting function.
+    """
+    _ = Data.load(LES_PATH, LES_MAPPING, adjust_fun=adjust_fun)
+
+def test_load_jld2_no_slice():
+    """
+    Smoke test of importating .jld2 without slicing.
+    """
+    jld2_trans_mapping_no_slice = cast(dict[str, TransAxisParType], {
+        'u': ((True, 0, ()), (False, 0, ()), (False, 0, ()),),
+        'v': ((True, 0, ()), (False, 0, ()), (False, 0, ()),),
+        'b': ((True, 0, ()), (False, 0, ()), (False, 0, ()),),
+        'pt': ((True, 0, ()), (False, 0, ()), (False, 0, ()),)
+    })
+    _ = Data.load(
+        LES_JLD2_PATH, JLD2_LESFC_NAMES_MAPPING, trans_axis_mapping=jld2_trans_mapping_no_slice,
+        adjust_fun=adjust_fun, adjust_fun_pars_out=ADJUST_FUN_PARS_JLD2, time_sep=True
+    )
+
+def test_load_jld2_slice():
+    """
+    Smoke and shape test of loading a .jld2 file with slicing.
+    """
+    data = Data.load(
+        LES_JLD2_PATH, JLD2_LESFC_NAMES_MAPPING, trans_axis_mapping=JLD2_TRANS_AXIS_MAPPING_STR_INT,
+        adjust_fun=adjust_fun, adjust_fun_pars_out=ADJUST_FUN_PARS_JLD2, time_sep=True
+    )
+    pt_shape = data.trajectory.pt.shape # pyright: ignore[reportOptionalMemberAccess]
+    assert data.trajectory.u.shape == pt_shape
+    assert data.trajectory.u.shape[1] == 64
+    assert data.trajectory.u.shape[0] == data.trajectory.time.shape[0]
+    assert data.trajectory.grid.zr.shape[0] == 64
+
+def test_load_time_sep():
+    """
+    Error check of importation without time separation a file that separates the time steps.
+    """
+    with pytest.raises(TypeError):
+        _ = Data.load(
+            LES_JLD2_PATH, JLD2_LESFC_NAMES_MAPPING,
+            trans_axis_mapping=JLD2_TRANS_AXIS_MAPPING_STR_INT, adjust_fun=adjust_fun,
+            adjust_fun_pars_out=ADJUST_FUN_PARS_JLD2, time_sep=False
+        )
+
+def test_load_other_files():
+    """
+    Error check on the importation of another file extension.
+    """
     with pytest.raises(ValueError):
         _ = Data.load('test.wrong_ext', {})

@@ -21,7 +21,7 @@ References
 
 from __future__ import annotations
 import inspect
-from typing import Tuple, Dict, TypeAlias, cast
+from typing import cast
 
 import equinox as eqx
 import jax
@@ -34,7 +34,7 @@ from tunax.functions import FloatJax, tridiag_solve, add_boundaries
 from tunax.closure import ClosureParametersAbstract, ClosureStateAbstract, Closure
 from tunax.closures_registry import CLOSURES_REGISTRY
 
-StatesTime: TypeAlias = Tuple[State, ClosureStateAbstract, float]
+type StatesTime = tuple[State, ClosureStateAbstract, float]
 """Type that represent the values that are transformed in an integration step of the model."""
 
 
@@ -148,7 +148,7 @@ class SingleColumnModel(eqx.Module):
                 case_attributes[tra_type_attr] = None
         self.case_tracable = CaseTracable(**case_attributes)
 
-    def tra_promote(self, promotions: Dict[str, str]) -> SingleColumnModel:
+    def tra_promote(self, promotions: dict[str, str]) -> SingleColumnModel:
         """
         Increase the dimension type of the tracers.
 
@@ -157,7 +157,7 @@ class SingleColumnModel(eqx.Module):
 
         Parameters
         ----------
-        promotions : Dict[str, str]
+        promotions : dict[str, str]
             The keys of the dictionnary are the name of the tracer variables to modify the
             dimensions of the forcing, one of {:code:`'t'`, :code:`'s'`, :code:`'b'`, :code:`'pt`'},
             the values are the new dimensions of the forcings, possible values
@@ -229,7 +229,7 @@ class SingleColumnModel(eqx.Module):
         time += self.dt
         return state, closure_state, time
 
-    @jax.checkpoint
+    @jax.checkpoint  # pyright: ignore[reportPrivateImportUsage]
     def step_check(
         self,
         state: State,
@@ -304,7 +304,7 @@ class SingleColumnModel(eqx.Module):
             step_fun = self.step_check
         else:
             step_fun = self.step
-        def scan_fn(carry: StatesTime, _: FloatJax) -> Tuple[StatesTime, None]:
+        def scan_fn(carry: StatesTime, _: FloatJax) -> tuple[StatesTime, None]:
             state, closure_state, time = carry
             state, closure_state, time = step_fun(state, closure_state, time, closure_parameters)
             return (state, closure_state, time), None
@@ -365,7 +365,7 @@ class SingleColumnModel(eqx.Module):
         """
         init_closure_state = self.closure.state_class(self.init_state.grid, closure_parameters)
 
-        def scan_fn(carry: StatesTime, _: FloatJax) -> Tuple[StatesTime, StatesTime]:
+        def scan_fn(carry: StatesTime, _: FloatJax) -> tuple[StatesTime, StatesTime]:
             state, closure_state, time = carry
             state, closure_state, time = self.run_partial(
                 state, closure_state, time, self.p_out, closure_parameters

@@ -8,7 +8,6 @@ be obtained by the prefix :code:`tunax.fitter.` or directly by :code:`tunax.`.
 """
 
 from __future__ import annotations
-from typing import Dict
 
 import equinox as eqx
 import jax.numpy as jnp
@@ -52,7 +51,7 @@ class FittableParametersSet(eqx.Module):
 
     Parameters
     ----------
-    coef_fit_dict : Dict[str, FittableParameter]
+    coef_fit_dict : dict[str, FittableParameter]
         cf. :attr:`coef_fit_dict`.
     closure_name : str
         Name of the chosen closure, must be a key of
@@ -61,7 +60,7 @@ class FittableParametersSet(eqx.Module):
 
     Attributes
     ----------
-    coef_fit_dico : Dict[str, FittableParameter]
+    coef_fit_dico : dict[str, FittableParameter]
         The set of all the configurations of all the parameters that will be
         calibrated and the one constants but not with the default value of the
         closure.
@@ -70,12 +69,12 @@ class FittableParametersSet(eqx.Module):
     
     """
 
-    coef_fit_dict: Dict[str, FittableParameter]
+    coef_fit_dict: dict[str, FittableParameter]
     closure: Closure
 
     def __init__(
             self,
-            coef_fit_dict: Dict[str, FittableParameter],
+            coef_fit_dict: dict[str, FittableParameter],
             closure_name: str
         ) -> None:
         self.coef_fit_dict = coef_fit_dict

@@ -15,7 +15,8 @@ from __future__ import annotations
 import warnings
 from pathlib import Path
 from dataclasses import replace
-from typing import Union, Optional, Tuple, List, Dict, TypeAlias, Callable, Any, cast
+from collections.abc import Callable
+from typing import Any, cast
 
 import yaml
 import xarray as xr
@@ -467,9 +468,8 @@ class Data(eqx.Module):
             adjust_pars = adjust_pars_load | adjust_fun_pars_out
             data = adjust_fun(data, adjust_pars)
         return data
-        
 
-    def cut(self, out_nt_cut: int) -> List[Data]:
+    def cut(self, out_nt_cut: int) -> list[Data]:
         """
         Cuts the :attr:`Trajectory` in sub-trajectories, cf. :meth:`space.Trajectory.cut`.
 
@@ -480,7 +480,7 @@ class Data(eqx.Module):
         
         Returns
         -------
-        traj_list : List[Data]
+        traj_list : list[Data]
             List of :class:`Data` instances with the sub-trajectories in the chronological order.
         """
         traj_list = self.trajectory.cut(out_nt_cut)

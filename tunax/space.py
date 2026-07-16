@@ -9,7 +9,8 @@ prefix :code:`tunax.space.` or directly by :code:`tunax.`.
 """
 
 from __future__ import annotations
-from typing import Optional, List, Dict, Callable, TypeAlias, cast
+from collections.abc import Callable
+from typing import cast
 import warnings
 
 import equinox as eqx
@@ -20,20 +21,20 @@ from jaxtyping import Float, Array
 
 from tunax.functions import _format_to_single_line
 
-ArrNz: TypeAlias = Float[Array, 'nz']
+type ArrNz = Float[Array, 'nz']
 """Type that describes a float :class:`~jax.Array` of shape (nz)."""
-ArrNzp1: TypeAlias = Float[Array, 'nz+1']
+type ArrNzp1 = Float[Array, 'nz+1']
 """Type that describes a float :class:`~jax.Array` of shape (nz+1)."""
-ArrNt: TypeAlias = Float[Array, 'nt']
+type ArrNt = Float[Array, 'nt']
 """Type that describes a float :class:`~jax.Array` of shape (nt)."""
-ArrNtNz: TypeAlias = Float[Array, 'nz nt']
+type ArrNtNz = Float[Array, 'nz nt']
 """Type that describes a float :class:`~jax.Array` of shape (nt, nz)."""
 
-TRACERS_NAMES: List[str] = ['t', 's', 'b', 'pt']
+TRACERS_NAMES: list[str] = ['t', 's', 'b', 'pt']
 """Names of the tracers, in the order of temperature, salinity, buoyancy and passive tracer."""
-VARIABLE_NAMES: List[str] = ['u', 'v'] + TRACERS_NAMES
+VARIABLE_NAMES: list[str] = ['u', 'v'] + TRACERS_NAMES
 """Names of all the variables, zonal and meridionnal velocities in addition of the tracers."""
-VARIABLE_SHAPES: Dict[str, str] = {
+VARIABLE_SHAPES: dict[str, str] = {
     'u': 'zr',
     'v': 'zr',
     't': 'zr',
@@ -301,13 +302,13 @@ class State(eqx.Module):
     v : float :class:`~jax.Array` of shape (nz)
         Meridional velocity on the center of the cells :math:`\left[\text m \cdot
         \text s^{-1}\right]`.
-    t : float :class:`~jax.Array` of shape (nz), optionnal, default=None
+    t : float :class:`~jax.Array` of shape (nz), optionnal
         Temperature on the center of the cells :math:`[° \text C]`.
-    s : float :class:`~jax.Array` of shape (nz), optionnal, default=None
+    s : float :class:`~jax.Array` of shape (nz), optionnal
         Salinity on the center of the cells :math:`[\text{psu}]`.
-    b : float :class:`~jax.Array` of shape (nz), optionnal, default=None
+    b : float :class:`~jax.Array` of shape (nz), optionnal
         Buoyancy on the center of the cells :math:`[\text{dimensionless}]`.
-    pt : float :class:`~jax.Array` of shape (nz), optionnal, default=None
+    pt : float :class:`~jax.Array` of shape (nz), optionnal
         A passive tracer on the center of the cells :math:`[\text{dimensionless}]`.
 
     """
@@ -315,13 +316,13 @@ class State(eqx.Module):
     grid: Grid
     u: ArrNz
     v: ArrNz
-    t: Optional[ArrNz] = None
-    s: Optional[ArrNz] = None
-    b: Optional[ArrNz] = None
-    pt: Optional[ArrNz] = None
+    t: ArrNz | None = None
+    s: ArrNz | None = None
+    b: ArrNz | None = None
+    pt: ArrNz | None = None
 
     @classmethod
-    def zeros(cls, grid: Grid, tracers: List[str]) -> State:
+    def zeros(cls, grid: Grid, tracers: list[str]) -> State:
         """
         Initialize an instance with all variables equals to zero from a grid.
 
@@ -476,13 +477,13 @@ class Trajectory(eqx.Module):
         Time-serie of zonal velocity :math:`\left[\text m \cdot \text s^{-1}\right]`.
     v : float :class:`~jax.Array` of shape (nt, nz)
         Time-serie of meridional velocity :math:`\left[\text m \cdot \text s^{-1}\right]`.
-    t : float :class:`~jax.Array` of shape (nt, nz), optionnal, default=None
+    t : float :class:`~jax.Array` of shape (nt, nz), optionnal
         Time-serie of temperature :math:`[\text C°]`.
-    s : float :class:`~jax.Array` of shape (nt, nz), optionnal, default=None
+    s : float :class:`~jax.Array` of shape (nt, nz), optionnal
         Time-serie of salinity :math:`[\text{psu}]`.
-    b : float :class:`~jax.Array` of shape (nt, nz), optionnal, default=None
+    b : float :class:`~jax.Array` of shape (nt, nz), optionnal
         Time-serie of buoyancy :math:`[\text{dimensionless}]`.
-    pt : float :class:`~jax.Array` of shape (nt, nz), optionnal, default=None
+    pt : float :class:`~jax.Array` of shape (nt, nz), optionnal
         Time-serie a passive tracer :math:`[\text{dimensionless}]`.
         
     """
@@ -491,10 +492,10 @@ class Trajectory(eqx.Module):
     time: Float[Array, 'nt']
     u: ArrNtNz
     v: ArrNtNz
-    t: Optional[ArrNtNz] = None
-    s: Optional[ArrNtNz] = None
-    b: Optional[ArrNtNz] = None
-    pt: Optional[ArrNtNz] = None
+    t: ArrNtNz | None = None
+    s: ArrNtNz | None = None
+    b: ArrNtNz | None = None
+    pt: ArrNtNz | None = None
 
     def to_ds(self) -> xr.Dataset:
         """
@@ -559,7 +560,7 @@ class Trajectory(eqx.Module):
                 variables[var_name] = var[i_time, :]
         return State(self.grid, **variables)
 
-    def cut(self, out_nt_cut: int) -> List[Trajectory]:
+    def cut(self, out_nt_cut: int) -> list[Trajectory]:
         """
         Cut the trajectory in sub-trajectories of :code:`out_nt_cut` output steps.
 
@@ -574,7 +575,7 @@ class Trajectory(eqx.Module):
         
         Returns
         -------
-        traj_list : List[Trajectory]
+        traj_list : list[Trajectory]
             List of the sub-trajectories in the chronological order.
 
         Warns

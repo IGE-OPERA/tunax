@@ -6,13 +6,13 @@ the prefix :code:`tunax.functions.` or directly by :code:`tunax.`.
 
 """
 
-from typing import Tuple, TypeAlias, cast
+from typing import cast
 
 import jax.numpy as jnp
 from jax import lax
 from jaxtyping import Float, Array
 
-FloatJax: TypeAlias = Float[Array, '1']
+type FloatJax = Float[Array, '1']
 """Type that represent a float in a :class:`~jax.Array`, used only for the code linter."""
 
 
@@ -51,9 +51,9 @@ def tridiag_solve(
         Solution :math:`X` of tridiagonal problem.
     """
     def forward_scan_scal(
-        carry: Tuple[FloatJax, FloatJax],
+        carry: tuple[FloatJax, FloatJax],
         x: Float[Array, '4']
-    ) -> Tuple[Tuple[FloatJax, FloatJax], Tuple[FloatJax, FloatJax]]:
+    ) -> tuple[tuple[FloatJax, FloatJax], tuple[FloatJax, FloatJax]]:
         f_im1, q_im1 = carry
         a, b, c, f = x
         cff = 1./(b+a*q_im1)
@@ -67,7 +67,7 @@ def tridiag_solve(
     f = jnp.concat([jnp.array([init[0]]), f])
     q = jnp.concat([jnp.array([init[1]]), q])
 
-    def reverse_scan_scal(carry: float, x: Float[Array, '2']) -> Tuple[float, float]:
+    def reverse_scan_scal(carry: float, x: Float[Array, '2']) -> tuple[float, float]:
         q_rev, f_rev = x
         carry = f_rev + q_rev*carry
         return carry, carry

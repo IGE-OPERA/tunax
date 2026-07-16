@@ -9,7 +9,7 @@ first classe which works better with JAX specificities. This classes can be obta
 """
 
 from __future__ import annotations
-from typing import Union, Tuple, Callable, Optional, TypeAlias
+from collections.abc import Callable
 from dataclasses import replace
 
 import equinox as eqx
@@ -19,13 +19,13 @@ from jax import device_get
 from tunax.functions import add_boundaries
 from tunax.space import Grid, ArrNz, ArrNtNz
 
-ForcingType: TypeAlias = Union[
-    Tuple[float, float],
-    Callable[[float], float],
+type ForcingType = (
+    tuple[float, float] |
+    Callable[[float], float] |
     Callable[[float, float], float]
-]
+)
 """Type that represent the different possible types of the forcings in :class:`Case`."""
-ForcingArrayType: TypeAlias = Union[Tuple[float, float], ArrNz, ArrNtNz]
+type ForcingArrayType = (tuple[float, float] | ArrNz | ArrNtNz)
 """Type that represent the different possible types of the forcings in :class:`CaseTracable`."""
 
 _OMEGA = 7.292116e-05
@@ -83,7 +83,7 @@ class Case(eqx.Module):
         Meridional wind stress :math:`[\text{m}^{2} \cdot \text{s}^{-2}]`.
     vstr_btm : float, default=0.
         Meridional current stress at the bottom :math:`[\text{m}^{2} \cdot \text{s}^{-2}]`.
-    t_forcing : tuple of 2 floats or a function, optionnal, default=None
+    t_forcing : tuple of 2 floats or a function, optionnal
         Description of the forcing of temperature (potentially no forcing if the variable is not
         activated i.e. if :code:`'t'` is not in :code:`eos_tracers`). There are 3 cases :
 
@@ -101,19 +101,19 @@ class Case(eqx.Module):
           this time in :math:`[\text{K} \cdot \text{s}^{-1}]`. The values of the functions represent
           the flux of the forcing (the derivative along the depth).
 
-    s_forcing : tuple of 2 floats or a function, optionnal, default=None
+    s_forcing : tuple of 2 floats or a function, optionnal
         Description of the forcing of salinity (potentially no forcing if the variable is not
         activated i.e. if :code:`'s'` is not in :code:`eos_tracers`). There are the 3 same cases as
         for the :code:`t_forcing`, and the units are
         :math:`[\text{psu} \cdot \text{m} \cdot \text{s}^{-1}]` for the border forcing and
         :math:`[\text{psu} \cdot \text{s}^{-1}]` for the other ones.
-    b_forcing : tuple of 2 floats or a function, optionnal, default=None
+    b_forcing : tuple of 2 floats or a function, optionnal
         Description of the forcing of buoyancy (potentially no forcing if the variable is not
         activated i.e. if :code:`'b'` is not in :code:`eos_tracers`). There are the 3 same cases as
         for the :code:`t_forcing`, and the units are
         :math:`[\text{m} \cdot \text{s}^{-1}]` for the border forcing and
         :math:`[\text{s}^{-1}]` for the other ones.
-    pt_forcing : tuple of 2 floats or a function, optionnal, default=None
+    pt_forcing : tuple of 2 floats or a function, optionnal
         Description of the forcing of passive tracer (potentially no forcing if the variable is not
         activated i.e. if :code:`do_pt` is not set). There are the 3 same cases as for the
         :code:`t_forcing`, and the units are :math:`[\text{m} \cdot \text{s}^{-1}]`
@@ -139,10 +139,10 @@ class Case(eqx.Module):
     vstr_sfc: float = 0.
     vstr_btm: float = 0.
     # tracers forcings
-    t_forcing: Optional[ForcingType] = eqx.field(default=None, static=True)
-    s_forcing: Optional[ForcingType] = eqx.field(default=None, static=True)
-    b_forcing: Optional[ForcingType] = eqx.field(default=None, static=True)
-    pt_forcing: Optional[ForcingType] = eqx.field(default=None, static=True)
+    t_forcing: ForcingType | None = eqx.field(default=None, static=True)
+    s_forcing: ForcingType | None = eqx.field(default=None, static=True)
+    b_forcing: ForcingType | None = eqx.field(default=None, static=True)
+    pt_forcing: ForcingType | None = eqx.field(default=None, static=True)
 
     def set_lat(self, lat: float) -> Case:
         """
@@ -203,7 +203,7 @@ class CaseTracable(eqx.Module):
         cf. :attr:`Case.vstr_sfc`
     vstr_btm : float, default=0.
         cf. :attr:`Case.vstr_btm`
-    t_forcing : tuple of 2 floats or :class:`~jax.Array` (nz) or (nt, nz), optionnal, default=None
+    t_forcing : tuple of 2 floats or :class:`~jax.Array` (nz) or (nt, nz), optionnal
         Description of the temperature forcing cf. :attr:`Case.t_forcing`, the type depends on the
         forcing type :
         
@@ -220,21 +220,21 @@ class CaseTracable(eqx.Module):
           the geometrical :class:`Grid` and the different iteration times of the model. As for deep
           constant forcing, the values represent the flux of the forcing at every time.
 
-    s_forcing : tuple of 2 floats or :class:`~jax.Array` (nz) or (nt, nz), optionnal, default=None
+    s_forcing : tuple of 2 floats or :class:`~jax.Array` (nz) or (nt, nz), optionnal
         Same as :attr:`t_forcing` for Salinity.
-    b_forcing : tuple of 2 floats or :class:`~jax.Array` (nz) or (nt, nz), optionnal, default=None
+    b_forcing : tuple of 2 floats or :class:`~jax.Array` (nz) or (nt, nz), optionnal
         Same as :attr:`t_forcing` for buoyancy.
-    pt_forcing : tuple of 2 floats or :class:`~jax.Array` (nz) or (nt, nz), optionnal, default=None
+    pt_forcing : tuple of 2 floats or :class:`~jax.Array` (nz) or (nt, nz), optionnal
         Same as :attr:`t_forcing` for passive tracer.
-    t_forcing_type : str, optionnal, default=None
+    t_forcing_type : str, optionnal
         Description of the type of temperature forcing : :code:`'borders'` for **border forcing**,
         :code:`'constant'` for **deep constant forcing** and :code:`'variable'` for **deep variable
         forcing**
-    s_forcing_type : str, optionnal, default=None
+    s_forcing_type : str, optionnal
         Same as :attr:`t_forcing_type` for salinity.
-    b_forcing_type : str, optionnal, default=None
+    b_forcing_type : str, optionnal
         Same as :attr:`t_forcing_type` for buoyancy.
-    pt_forcing_type : str, optionnal, default=None
+    pt_forcing_type : str, optionnal
         Same as :attr:`t_forcing_type` for passive tracer.
 
     """
@@ -257,14 +257,14 @@ class CaseTracable(eqx.Module):
     vstr_sfc: float = 0.
     vstr_btm: float = 0.
     # tracers forcings
-    t_forcing: Optional[ForcingArrayType] = None
-    s_forcing: Optional[ForcingArrayType] = None
-    b_forcing: Optional[ForcingArrayType] = None
-    pt_forcing: Optional[ForcingArrayType] = None
-    t_forcing_type: Optional[str] = eqx.field(default=None, static=True)
-    s_forcing_type: Optional[str] = eqx.field(default=None, static=True)
-    b_forcing_type: Optional[str] = eqx.field(default=None, static=True)
-    pt_forcing_type: Optional[str] = eqx.field(default=None, static=True)
+    t_forcing: ForcingArrayType | None = None
+    s_forcing: ForcingArrayType | None = None
+    b_forcing: ForcingArrayType | None = None
+    pt_forcing: ForcingArrayType | None = None
+    t_forcing_type: str | None = eqx.field(default=None, static=True)
+    s_forcing_type: str | None = eqx.field(default=None, static=True)
+    b_forcing_type: str | None = eqx.field(default=None, static=True)
+    pt_forcing_type: str | None = eqx.field(default=None, static=True)
 
     def tra_promote_borders_constant(self, tra: str, grid: Grid) -> CaseTracable:
         """

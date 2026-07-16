@@ -28,7 +28,7 @@ References
 """
 
 from __future__ import annotations
-from typing import Tuple, cast
+from typing import cast
 
 import equinox as eqx
 import jax.numpy as jnp
@@ -538,7 +538,7 @@ def keps_step(
 
     return keps_state
 
-def compute_eos(state: State, case: CaseTracable) -> Tuple[ArrNzp1, ArrNz]:
+def compute_eos(state: State, case: CaseTracable) -> tuple[ArrNzp1, ArrNz]:
     r"""
     Compute density anomaly and Brunt–Väisälä frequency.
     
@@ -634,7 +634,7 @@ def compute_tke_eps_bc(
         hz: ArrNz,
         keps_params: KepsParameters,
         case_tracable: CaseTracable
-    ) -> Tuple[FloatJax, FloatJax, FloatJax, FloatJax]:
+    ) -> tuple[FloatJax, FloatJax, FloatJax, FloatJax]:
     r"""
     Compute top and bottom boundary conditions for TKE and :math:`\varepsilon`.
 
@@ -872,7 +872,7 @@ def compute_diag(
         bvf: ArrNzp1,
         shear2: ArrNzp1,
         keps_params: KepsParameters
-    ) -> Tuple[ArrNzp1, ArrNzp1, ArrNzp1, ArrNzp1, ArrNzp1]:
+    ) -> tuple[ArrNzp1, ArrNzp1, ArrNzp1, ArrNzp1, ArrNzp1]:
     r"""
     Computes the diagnostic variables of :math:`k-\varepsilon` closure.
 

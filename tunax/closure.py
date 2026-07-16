@@ -10,7 +10,7 @@ This module contains the abstract classes required to define a closure, which is
 """
 
 from abc import ABC
-from typing import Callable, Type, TypeVar, Generic
+from collections.abc import Callable
 
 import equinox as eqx
 
@@ -29,15 +29,9 @@ class ClosureParametersAbstract(eqx.Module, ABC):
     closure functions to recover the parameters and do the computation. For a run of a calibration,
     the description of the parameters to calibration is done from the child class. It can also
     includes parameters that are not dedicated to be calibrated such as physical or mathematical
-    constants. The attributes of this class can be used to avoid the systematic computation of some
-    values which are independent of the time (eg. k-epsilon with the method :code:`__post_init__`). 
+    constants.
     
     """
-
-
-# variable that represent a type which contains ClosureParametersAbstract and
-# all its subclasses
-CloParT = TypeVar('CloParT', bound=ClosureParametersAbstract)
 
 
 class ClosureStateAbstract(eqx.Module, ABC):
@@ -81,12 +75,8 @@ class ClosureStateAbstract(eqx.Module, ABC):
     def __init__(self, grid: Grid, closure_parameters: ClosureParametersAbstract):
         pass
 
-# variable that represent a type which contains ClosureStateAbstract and
-# all its subclasses
-CloStateT = TypeVar('CloStateT', bound=ClosureStateAbstract)
 
-
-class Closure(eqx.Module, Generic[CloStateT, CloParT]):
+class Closure[CloStateT: ClosureStateAbstract, CloParT: ClosureParametersAbstract](eqx.Module):
     r"""
     Implementation of a physical closure for computing eddy-diffusivity.
 
@@ -101,11 +91,11 @@ class Closure(eqx.Module, Generic[CloStateT, CloParT]):
     ----------
     name : str
         The name of the closure.
-    parameters_class : Type[ClosureParametersAbstract]
+    parameters_class : type[ClosureParametersAbstract]
         A child class of :class:`~ClosureParametersAbstract` that defines the constant parameters
         used in the computation done by the closure, it includes the parameters that may be
         calibrated.
-    state_class : Type[ClosureStateAbstract]
+    state_class : type[ClosureStateAbstract]
         A child class of :class:`~ClosureStateAbstract` that defines the state of the water column
         for the variables used by the closure computation.
     step_fun : Callable[[State, CloStateT, float, CloParT, CaseTracable], CloStateT]
@@ -139,6 +129,6 @@ class Closure(eqx.Module, Generic[CloStateT, CloParT]):
     """
 
     name : str
-    parameters_class: Type[ClosureParametersAbstract]
-    state_class: Type[ClosureStateAbstract]
+    parameters_class: type[ClosureParametersAbstract]
+    state_class: type[ClosureStateAbstract]
     step_fun: Callable[[State, CloStateT, float, CloParT, CaseTracable], CloStateT]

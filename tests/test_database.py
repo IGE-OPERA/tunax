@@ -4,11 +4,11 @@ Tests for the module tunax.database
 """
 
 from pathlib import Path
-from typing import cast
 
 import pytest
 import jax.numpy as jnp
 import numpy as np
+from jax import Array
 from h5py import File as H5pyFile
 
 from tunax.database import Data, TransAxisParType
@@ -45,14 +45,14 @@ JLD2_LESFC_NAMES_MAPPING: dict[str, dict[str, str]] = {
 }
 """Mapping of variables for .jld2 file."""
 
-JLD2_TRANS_AXIS_MAPPING_STR_INT = cast(dict[str, TransAxisParType], {
+JLD2_TRANS_AXIS_MAPPING_STR_INT: dict[str, TransAxisParType]= {
     'zr': ((True, 0, (64,)),),
     'zw': ((True, 0, ('nz+1',)),),
     'u': ((True, 0, ('nz',)), (False, 0, ()), (False, 0, ()),),
     'v': ((True, 0, ('nz',)), (False, 0, ()), (False, 0, ()),),
     'b': ((True, 0, (64,)), (False, 0, ()), (False, 0, ()),),
     'pt': ((True, 0, (64,)), (False, 0, ()), (False, 0, ()),)
-})
+}
 """Correct definition of projection and slicing for the .jld2 file."""
 
 ADJUST_FUN_PARS_JLD2 = {
@@ -69,13 +69,13 @@ ADJUST_FUN_PARS_JLD2 = {
     'arr, trans_axis, expected',
     [
         # no cut, 2D->1D
-        (jnp.arange(20).reshape(4, 5), ((True, 0, ()), (False, 2, ())), np.array([2, 7, 12, 17])),
+        (jnp.arange(20).reshape(4, 5), ((True, 0, ()), (False, 2, ())), jnp.array([2, 7, 12, 17])),
         # even number cut, 1D -> 1D
-        (jnp.arange(10), ((True, 0, (6,)),), np.array([2, 3, 4, 5, 6, 7])),
+        (jnp.arange(10), ((True, 0, (6,)),), jnp.array([2, 3, 4, 5, 6, 7])),
         # 2 slice cut
-        (jnp.arange(10), ((True, 0, (2, 5)),), np.array([2, 3, 4])),
+        (jnp.arange(10), ((True, 0, (2, 5)),), jnp.array([2, 3, 4])),
         # 3 slice cut
-        (jnp.arange(10), ((True, 0, (1, 6, 2)),), np.array([1, 3, 5])),
+        (jnp.arange(10), ((True, 0, (1, 6, 2)),), jnp.array([1, 3, 5])),
         # 2 dimensions, no cut, transposition
         (
             jnp.arange(20).reshape(4, 5),
@@ -97,9 +97,9 @@ ADJUST_FUN_PARS_JLD2 = {
     ]
 )
 def test_datatransform_arr_valid(
-        arr: jnp.ndarray,
+        arr: Array,
         trans_axis: TransAxisParType,
-        expected: jnp.ndarray
+        expected: Array
     ) -> None:
     """
     Tests of results for the method Data.transform_arr.
@@ -119,7 +119,7 @@ def test_datatransform_arr_valid(
     ]
 )
 def test_transform_arr_invalid(
-        arr: jnp.ndarray,
+        arr: Array,
         trans_axis: TransAxisParType
     ) -> None:
     """
@@ -135,7 +135,7 @@ def test_datatransform_arr_odd() -> None:
     arr = jnp.arange(11)
     with pytest.warns(UserWarning):
         result = Data.transform_arr(arr, ((True, 0, (6,)),))
-        np.testing.assert_array_equal(result, np.array([2, 3, 4, 5, 6, 7]))
+        np.testing.assert_array_equal(result, jnp.array([2, 3, 4, 5, 6, 7]))
 
 def test_datatransform_arr_jld2():
     """
@@ -180,12 +180,12 @@ def test_load_jld2_no_slice():
     """
     Smoke test of importating .jld2 without slicing.
     """
-    jld2_trans_mapping_no_slice = cast(dict[str, TransAxisParType], {
+    jld2_trans_mapping_no_slice: dict[str, TransAxisParType] = {
         'u': ((True, 0, ()), (False, 0, ()), (False, 0, ()),),
         'v': ((True, 0, ()), (False, 0, ()), (False, 0, ()),),
         'b': ((True, 0, ()), (False, 0, ()), (False, 0, ()),),
         'pt': ((True, 0, ()), (False, 0, ()), (False, 0, ()),)
-    })
+    }
     _ = Data.load(
         LES_JLD2_PATH, JLD2_LESFC_NAMES_MAPPING, trans_axis_mapping=jld2_trans_mapping_no_slice,
         adjust_fun=adjust_fun, adjust_fun_pars_out=ADJUST_FUN_PARS_JLD2, time_sep=True

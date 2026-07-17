@@ -28,7 +28,6 @@ References
 """
 
 from __future__ import annotations
-from typing import cast
 
 import equinox as eqx
 import jax.numpy as jnp
@@ -572,19 +571,23 @@ def compute_eos(state: State, case: CaseTracable) -> tuple[ArrNzp1, ArrNz]:
     rho0 = case.rho0
     match case.eos_tracers:
         case 't':
-            rho = rho0 * (1. - case.alpha*(jnp.array(state.t)-case.t_rho_ref))
+            assert state.t is not None
+            rho = rho0 * (1. - case.alpha*(state.t-case.t_rho_ref))
         case 's':
-            rho = rho0 * (1. + case.beta*(jnp.array(state.s)-case.s_rho_ref))
+            assert state.s is not None
+            rho = rho0 * (1. + case.beta*(state.s-case.s_rho_ref))
         case 'ts':
-            rho = rho0 * (1. - case.alpha*(jnp.array(state.t)-case.t_rho_ref) + \
-                case.beta*(jnp.array(state.s)-case.s_rho_ref))
+            assert state.t is not None and state.s is not None
+            rho = rho0 * (1. - case.alpha*(state.t-case.t_rho_ref) + \
+                case.beta*(state.s-case.s_rho_ref))
         case 'b':
-            rho = rho0*(1-jnp.array(state.b)/case.grav)
+            assert state.b is not None
+            rho = rho0*(1-state.b/case.grav)
         case _:
             raise ValueError("The attribute Case.eos_tracers must be one of {'t', 's', 'ts', 'b'}.")
     cff = 1./(state.grid.zr[1:]-state.grid.zr[:-1])
     bvf_in = - cff*case.grav/rho0 * (rho[1:]-rho[:-1])
-    bvf = add_boundaries(0., bvf_in, cast(float, bvf_in[-1]))
+    bvf = add_boundaries(jnp.array([0.]), bvf_in, bvf_in[-1])
     return rho, bvf
 
 
@@ -687,26 +690,26 @@ def compute_tke_eps_bc(
     ustar2_bot = jnp.sqrt(case_tracable.ustr_btm**2 + case_tracable.vstr_btm**2)
 
     # TKE Dirichlet boundary condition
-    tke_sfc_dir = jnp.maximum(keps_params.tke_min, cm0inv2*ustar2_sfc)
-    tke_btm_dir = jnp.maximum(keps_params.tke_min, cm0inv2*ustar2_bot)
+    tke_sfc_dir: FloatJax = jnp.maximum(keps_params.tke_min, cm0inv2*ustar2_sfc)
+    tke_btm_dir: FloatJax = jnp.maximum(keps_params.tke_min, cm0inv2*ustar2_bot)
 
     # TKE Neumann boundary condition
-    tke_sfc_neu = 0.0
-    tke_btm_neu = 0.0
+    tke_btm_neu: FloatJax = jnp.array([0.])
+    tke_sfc_neu: FloatJax = jnp.array([0.])
 
     # epsilon surface conditions
     z0_s = jnp.maximum(keps_params.z0s_min, chk*ustar2_sfc)
     lgthsc = vkarmn*(0.5*hz[-1] + z0_s)
     tke_sfc = 0.5*(tke[-1]+tke[-2])
-    eps_sfc_dir = jnp.maximum(keps_params.eps_min, c_mu0**rp * lgthsc**rn * tke_sfc**rm)
-    eps_sfc_neu = cast(float, -rn*vkarmn/sig_eps * c_mu0**(rp+1) * tke_sfc**(rm+.5) * lgthsc**rn)
+    eps_sfc_dir: FloatJax = jnp.maximum(keps_params.eps_min, c_mu0**rp * lgthsc**rn * tke_sfc**rm)
+    eps_sfc_neu: FloatJax = -rn*vkarmn/sig_eps * c_mu0**(rp+1) * tke_sfc**(rm+.5) * lgthsc**rn
 
     # epsilon bottom conditions
     z0b = jnp.maximum(keps_params.z0b, keps_params.z0b_min)
     lgthsc = vkarmn *(0.5*hz[0] + z0b)
     tke_btm = 0.5*(tke[0]+tke[1])
-    eps_btm_dir = jnp.maximum(keps_params.eps_min, c_mu0**rp * lgthsc**rn * tke_btm**rm)
-    eps_btm_neu = cast(float, -rn*vkarmn/sig_eps * c_mu0**(rp+1) * tke_btm**(rm+.5) * lgthsc**rn)
+    eps_btm_dir: FloatJax = jnp.maximum(keps_params.eps_min, c_mu0**rp * lgthsc**rn * tke_btm**rm)
+    eps_btm_neu: FloatJax = -rn*vkarmn/sig_eps * c_mu0**(rp+1) * tke_btm**(rm+.5) * lgthsc**rn
 
     tke_sfc_bc = jnp.where(keps_params.dir_sfc, tke_sfc_dir, tke_sfc_neu)
     tke_btm_bc = jnp.where(keps_params.dir_btm, tke_btm_dir, tke_btm_neu)
@@ -839,22 +842,22 @@ def advance_turb(
 
     # surface boundary condition
     dir_sfc = keps_params.dir_sfc
-    a_sfc = cast(float, jnp.where(dir_sfc, 0., -0.5*(ak_vec[-1] + ak_vec[-2])))
-    b_sfc = cast(float, jnp.where(dir_sfc, 1., 0.5*(ak_vec[-1] + ak_vec[-2])))
+    a_sfc = jnp.where(dir_sfc, 0., -0.5*(ak_vec[-1] + ak_vec[-2]))
+    b_sfc = jnp.where(dir_sfc, 1., 0.5*(ak_vec[-1] + ak_vec[-2]))
     sfc_bc = jnp.where(do_tke, tke_sfc_bc, eps_sfc_bc)
-    f_sfc = cast(float, jnp.where(dir_sfc, sfc_bc, hz[-1]*sfc_bc))
+    f_sfc = jnp.where(dir_sfc, sfc_bc, hz[-1]*sfc_bc)
 
     # bottom boundary condition
     dir_btm = keps_params.dir_btm
-    b_btm = cast(float, jnp.where(dir_btm, 1., -0.5*(ak_vec[0] + ak_vec[1])))
-    c_btm = cast(float, jnp.where(dir_btm, 0., 0.5*(ak_vec[0] + ak_vec[1])))
+    b_btm = jnp.where(dir_btm, 1., -0.5*(ak_vec[0] + ak_vec[1]))
+    c_btm = jnp.where(dir_btm, 0., 0.5*(ak_vec[0] + ak_vec[1]))
     btm_bc = jnp.where(do_tke, tke_btm_bc, eps_btm_bc)
-    f_btm = cast(float, jnp.where(dir_btm, btm_bc, hz[0]*btm_bc))
+    f_btm = jnp.where(dir_btm, btm_bc, hz[0]*btm_bc)
 
     # vectors rassembly
-    a = add_boundaries(0., a_in, a_sfc)
+    a = add_boundaries(jnp.array([0.]), a_in, a_sfc)
     b = add_boundaries(b_btm, b_in, b_sfc)
-    c = add_boundaries(c_btm, c_in, 0.)
+    c = add_boundaries(c_btm, c_in, jnp.array([0.]))
     f = add_boundaries(f_btm, f_in, f_sfc)
 
     # solve tridiagonal problem
@@ -982,10 +985,10 @@ def compute_diag(
     akt_in = jnp.maximum(cff*c_mu_prim[1:-1], akt_min)
     akv_in = jnp.maximum(cff*c_mu[1:-1], akv_min)
 
-    akt_btm = cast(float, jnp.maximum(1.5*akt_in[0] - 0.5*akt_in[1], akt_min))
-    akt_sfc = cast(float, jnp.maximum(1.5*akt_in[-1] - 0.5*akt_in[-2], akt_min))
-    akv_btm = cast(float, jnp.maximum(1.5*akv_in[0] - 0.5*akv_in[1], akv_min))
-    akv_sfc = cast(float, jnp.maximum(1.5*akv_in[-1] - 0.5*akv_in[-2], akv_min))
+    akt_btm = jnp.maximum(1.5*akt_in[0] - 0.5*akt_in[1], akt_min)
+    akt_sfc = jnp.maximum(1.5*akt_in[-1] - 0.5*akt_in[-2], akt_min)
+    akv_btm = jnp.maximum(1.5*akv_in[0] - 0.5*akv_in[1], akv_min)
+    akv_sfc = jnp.maximum(1.5*akv_in[-1] - 0.5*akv_in[-2], akv_min)
 
     akt = add_boundaries(akt_btm, akt_in, akt_sfc)
     akv = add_boundaries(akv_btm, akv_in, akv_sfc)

@@ -21,7 +21,6 @@ References
 
 from __future__ import annotations
 import inspect
-from typing import cast
 
 import equinox as eqx
 import jax
@@ -222,7 +221,7 @@ class SingleColumnModel(eqx.Module):
             state, closure_state, dt, closure_parameters, case_tracable
         )
         # advance tracers
-        i_time = cast(int, time/self.dt)
+        i_time = int(time/self.dt)
         state = advance_tra_ed(state, closure_state.akt, dt, case_tracable, i_time)
         # advance velocities
         state = advance_dyn_cor_ed(state, closure_state.akv, dt, case_tracable)
@@ -661,9 +660,9 @@ def diffusion_solver(
     b_sfc = hz[-1] - a_sfc
 
     # concatenations
-    a = add_boundaries(0., a_in, cast(float, a_sfc))
-    b = add_boundaries(cast(float, b_btm), b_in, cast(float, b_sfc))
-    c = add_boundaries(cast(float, c_btm), c_in, 0.)
+    a = add_boundaries(jnp.array([0.]), a_in, a_sfc)
+    b = add_boundaries(b_btm, b_in, b_sfc)
+    c = add_boundaries(c_btm, c_in, jnp.array([0.]))
 
     x = tridiag_solve(a, b, c, f)
 

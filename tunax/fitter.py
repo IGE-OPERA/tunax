@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import equinox as eqx
 import jax.numpy as jnp
-from jaxtyping import Float, Array
+from jax import Array
+from jaxtyping import Float
 
 from tunax.closure import ClosureParametersAbstract, Closure
 from tunax.closures_registry import CLOSURES_REGISTRY
@@ -110,7 +111,7 @@ class FittableParametersSet(eqx.Module):
 
         Parameters
         ----------
-        x : float :class:`~jax.Array` of shape (nc)
+        x : :class:`~jax.Array` of shape (nc)
             The array on which the optimize works to find the best values. It
             is the array of the parameters that are calibrated.
 

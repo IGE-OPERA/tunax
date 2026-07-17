@@ -16,7 +16,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jax import device_get
 
-from tunax.functions import add_boundaries
+from tunax.functions import FloatJax, add_boundaries
 from tunax.space import Grid, ArrNz, ArrNtNz
 
 type ForcingType = (
@@ -25,7 +25,7 @@ type ForcingType = (
     Callable[[float, float], float]
 )
 """Type that represent the different possible types of the forcings in :class:`Case`."""
-type ForcingArrayType = (tuple[float, float] | ArrNz | ArrNtNz)
+type ForcingArrayType = (tuple[FloatJax, FloatJax] | ArrNz | ArrNtNz)
 """Type that represent the different possible types of the forcings in :class:`CaseTracable`."""
 
 _OMEGA = 7.292116e-05
@@ -206,20 +206,17 @@ class CaseTracable(eqx.Module):
     t_forcing : tuple of 2 floats or :class:`~jax.Array` (nz) or (nt, nz), optionnal
         Description of the temperature forcing cf. :attr:`Case.t_forcing`, the type depends on the
         forcing type :
-        
         - **Border forcing** : tuple of 2 floats, the first one is the forcing at the bottom and the
           second one is the forcing at the top of the water column, the unit is in
           :math:`[\text{K} \cdot \text{m} \cdot \text{s}^{-1}]`.
-        
-        - **Deep constant forcing** : array of shape (nz) : the value of the forcing function on the
-          geometrical :class:`Grid` of the model. The values represent the forcing flux, which is
-          for each cell the difference between the forcing at the top of the cell and the forcing at
-          bottom.
-        
-        - **Deep variable forcing** : array of shape (nt, nz) : the value of the forcing function on
-          the geometrical :class:`Grid` and the different iteration times of the model. As for deep
-          constant forcing, the values represent the flux of the forcing at every time.
-
+        - **Deep constant forcing** : :class:`~jax.Array` of shape (nz) : the value of the forcing
+          function on the geometrical :class:`Grid` of the model. The values represent the forcing
+          flux, which is for each cell the difference between the forcing at the top of the cell and
+          the forcing at bottom.
+        - **Deep variable forcing** : :class:`~jax.Array` of shape (nt, nz) : the value of the
+          forcing function on the geometrical :class:`Grid` and the different iteration times of the
+          model. As for deep constant forcing, the values represent the flux of the forcing at every
+          time.
     s_forcing : tuple of 2 floats or :class:`~jax.Array` (nz) or (nt, nz), optionnal
         Same as :attr:`t_forcing` for Salinity.
     b_forcing : tuple of 2 floats or :class:`~jax.Array` (nz) or (nt, nz), optionnal

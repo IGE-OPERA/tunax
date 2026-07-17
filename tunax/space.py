@@ -16,8 +16,8 @@ import warnings
 import equinox as eqx
 import xarray as xr
 import jax.numpy as jnp
-from jax import vmap
-from jaxtyping import Float, Array
+from jax import Array, vmap
+from jaxtyping import Float
 
 from tunax.functions import _format_to_single_line
 

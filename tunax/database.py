@@ -21,6 +21,7 @@ from typing import Any, cast
 import xarray as xr
 import equinox as eqx
 import jax.numpy as jnp
+from jax import Array
 from h5py import File as H5pyFile
 from h5py import Group as H5pyGroup
 
@@ -32,7 +33,7 @@ from tunax.model import SingleColumnModel
 
 type TransAxisType = tuple[tuple[bool, int, tuple[int, ...]], ...]
 """Details the projection, transposition and slicing of an array, cf. :meth:`Data.transform_arr`"""
-type TransAxisParType = tuple[tuple[bool, int, tuple[int, ...]], ...]
+type TransAxisParType = tuple[tuple[bool, int, tuple[int | str, ...]], ...]
 """Details the projection, transposition and slicing of an array, parametrisable version."""
 
 
@@ -51,9 +52,9 @@ class Data(eqx.Module):
         The time-series of the variables that represent this data.
     case : Case
         The physical case that represent this data.
-    metadatas : dict[str, float :class:`~jax.Array`], default={}
+    metadatas : dict[str, float :class:`~jax.Array`]
         Some metadatas that we want to use later. They can be floats or arrays but always written in
-        a JAX array.
+        a :class:`jax.Array`.
 
     Raises
     ------
@@ -65,13 +66,13 @@ class Data(eqx.Module):
 
     trajectory: Trajectory
     case: Case
-    metadatas: dict[str, jnp.ndarray] = eqx.field(static=True)
+    metadatas: dict[str, Array] = eqx.field(static=True)
 
     @staticmethod
     def transform_arr(
-            arr: jnp.ndarray,
-            trans_axis: TransAxisType,
-        ) -> jnp.ndarray:
+            arr: Array,
+            trans_axis: TransAxisType
+        ) -> Array:
         """
         Projection, transposition and slice of the input array.
 
@@ -102,7 +103,7 @@ class Data(eqx.Module):
         
         Returns
         -------
-        transformed_arr : float :class:`~jax.Array`
+        transformed_arr : :class:`~jax.Array`
             Array `arr` projected, transposed and sliced on all the axis.
         """
         if len(arr.shape) != len(trans_axis):
@@ -154,7 +155,7 @@ class Data(eqx.Module):
             var_map: dict[str, str],
             trans_axis_mapping: dict[str, TransAxisType] | None = None,
             suffix: str = ''
-        ) -> jnp.ndarray:
+        ) -> Array:
         """
         Shortcut for the loading a data in a read file.
 
@@ -178,7 +179,7 @@ class Data(eqx.Module):
         
         Returns
         -------
-        arr : jnp.ndarray
+        arr : :class:`~jax.Array`
             Array of the variable `var_name` in the `file` potentially transformed by the parameters
             in `trans_axis_mapping`.
         """
@@ -325,9 +326,10 @@ class Data(eqx.Module):
         ap_map = names_mapping['adjust_params']
         # load nz
         if 'nz' in var_map.keys():
-            nz = int(Data._get_val(file, 'nz', var_map, trans_axis_mapping))
+            nz = int(Data._get_val(file, 'nz', var_map))
         else:
-            zr = Data._get_val(file, 'zr', var_map, trans_axis_mapping)
+            trans_axis_mapp = cast(dict[str, TransAxisType] | None, trans_axis_mapping)
+            zr = Data._get_val(file, 'zr', var_map, trans_axis_mapp)
             nz = zr.shape[0]
         # replace potential 'nz' in trans_axis_mapping
         if trans_axis_mapping is not None:
@@ -336,11 +338,13 @@ class Data(eqx.Module):
                 for var, proj_axis in trans_axis_mapping.items()
             }
         # load grid
-        zr = Data._get_val(file, 'zr', var_map, trans_axis_mapping)
-        zw = Data._get_val(file, 'zw', var_map, trans_axis_mapping)
+        trans_axis_mapp = cast(dict[str, TransAxisType] | None, trans_axis_mapping)
+        zr = Data._get_val(file, 'zr', var_map, trans_axis_mapp)
+        zw = Data._get_val(file, 'zw', var_map, trans_axis_mapp)
         # load time
         if time_sep:
-            gr = cast(H5pyGroup, (file[var_map['time']]))
+            gr = file[var_map['time']]
+            assert isinstance(gr, H5pyGroup)
             time_int_sorted_list = sorted([int(i) for i in list(gr.keys())])
             time_str_list = [str(i) for i in time_int_sorted_list]
             time_float_list = []
@@ -350,7 +354,7 @@ class Data(eqx.Module):
                 ))
             time = jnp.array(time_float_list)
         else:
-            time = Data._get_val(file, 'time', var_map, trans_axis_mapping)
+            time = Data._get_val(file, 'time', var_map, trans_axis_mapp)
         # load variables
         variables_dict = {}
         for var_name in VARIABLE_NAMES:
@@ -360,12 +364,12 @@ class Data(eqx.Module):
                 var_list = []
                 for time_str in time_str_list: # pyright: ignore[reportPossiblyUnboundVariable]
                     var_list.append(Data._get_val(
-                        file, var_name, var_map, trans_axis_mapping, f'/{time_str}'
+                        file, var_name, var_map, trans_axis_mapp, f'/{time_str}'
                     ))
                 variables_dict[var_name] = jnp.vstack(var_list)
             else:
                 variables_dict[var_name] = Data._get_val(
-                    file, var_name, var_map, trans_axis_mapping
+                    file, var_name, var_map, trans_axis_mapp
                 )
         # generate trajectory
         trajectory = Trajectory(Grid(zr, zw), time, **variables_dict)

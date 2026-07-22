@@ -1,7 +1,11 @@
 """
 Importation of Tunax classes and functions for shortcuts.
+
 """
 
+
+import jax
+jax.config.update('jax_enable_x64', True)
 
 from .space import Grid, State, Trajectory
 from .case import Case, CaseTracable

@@ -128,56 +128,38 @@ class SingleColumnModel(eqx.Module):
         case_attributes = {k: v for k, v in vars(case).items() if not k.startswith('__')}
         for tra in ['t', 's', 'b', 'pt']:
             tra_attr = f'{tra}_forcing'
-            tra_type_attr = f'{tra}_forcing_type'
             forcing = getattr(case, tra_attr)
-            if forcing is not None:
-                if isinstance(forcing, tuple):
-                    case_attributes[tra_type_attr] = 'borders'
-                    case_attributes[tra_attr] = forcing
-                elif callable(forcing) and len(inspect.signature(forcing).parameters) == 1:
-                    case_attributes[tra_type_attr] = 'constant'
-                    vec_fun = vmap(forcing)
-                    case_attributes[tra_attr] = grid.hz*vec_fun(grid.zr)
-                elif callable(forcing) and len(inspect.signature(forcing).parameters) == 2:
-                    case_attributes[tra_type_attr] = 'variable'
-                    time = jnp.linspace(0, (self.nt-1)*self.dt, self.nt)
-                    zr_grid, time_grid = jnp.meshgrid(grid.zr, time)
-                    case_attributes[tra_attr] = grid.hz*forcing(zr_grid, time_grid)
-            else:
-                case_attributes[tra_type_attr] = None
+            if forcing is None:
+                continue
+            if isinstance(forcing, float):
+                forcing = add_boundaries(0., jnp.zeros(grid.nz-2), forcing)
+            if isinstance(forcing, tuple):
+                forcing = add_boundaries(-forcing[0], jnp.zeros(grid.nz-2), forcing[1])
+            elif callable(forcing) and len(inspect.signature(forcing).parameters) == 1:
+                vec_fun = vmap(forcing)
+                forcing = grid.hz*vec_fun(grid.zr)
+            elif callable(forcing) and len(inspect.signature(forcing).parameters) == 2:
+                time = jnp.linspace(0, (self.nt-1)*self.dt, self.nt)
+                zr_grid, time_grid = jnp.meshgrid(grid.zr, time)
+                forcing = grid.hz*forcing(zr_grid, time_grid)
+            case_attributes[tra_attr] = forcing
         self.case_tracable = CaseTracable(**case_attributes)
 
-    def tra_promote(self, promotions: dict[str, str]) -> SingleColumnModel:
+    def make_var(self, tra: str) -> SingleColumnModel:
         """
-        Increase the dimension type of the tracers.
-
-        It is usefull to use :func:`~jax.vmap` on several instances of :class:`SingleColumnModel`
-        to do batch computing (run the model in parallel).
+        Give to a tracer a variable shape for batching with other models with variable tracer.
 
         Parameters
         ----------
-        promotions : dict[str, str]
-            The keys of the dictionnary are the name of the tracer variables to modify the
-            dimensions of the forcing, one of {:code:`'t'`, :code:`'s'`, :code:`'b'`, :code:`'pt`'},
-            the values are the new dimensions of the forcings, possible values
-            {:code:`'constant'`, :code:`'variable'`}.
+        tra : str, {:code:`'t'`, :code:`'s'`, :code:`'b'`, :code:`'pt`'}
+            To which constant tracer give a variable shape.
         
         Returns
         -------
         model : SingleColumnModel
-            The :code:`self` object with the several promoted forcings.
+            The :code:`self` object with the updated shape for the tracer :code:`tra`.
         """
-        case_tracable = self.case_tracable
-        for tra, prom in promotions.items():
-            grid = self.init_state.grid
-            if prom == 'constant':
-                case_tracable = case_tracable.tra_promote_borders_constant(tra, grid)
-            elif prom == 'variable':
-                initial_type = getattr(case_tracable, f'{tra}_forcing_type') == 'borders'
-                if initial_type == 'borders':
-                    case_tracable = case_tracable.tra_promote_borders_variable(tra, grid, self.nt)
-                elif initial_type == 'constant':
-                    case_tracable = case_tracable.tra_promote_constant_variable(tra, self.nt)
+        case_tracable = self.case_tracable.tra_promote_constant_variable(tra, self.nt)
         return eqx.tree_at(lambda t: t.case_tracable, self, case_tracable)
 
     def step(
@@ -441,58 +423,6 @@ def lmd_swfrac(hz: ArrNz) -> ArrNzp1:
     _, swr_frac = lax.scan(lax_step, (r1, 1.0 - r1), jnp.arange(1, nz+1))
     return jnp.concat((swr_frac[::-1], jnp.array([1.])))
 
-
-def tracer_flux(
-        tracer: str,
-        case_tracable: CaseTracable,
-        grid: Grid,
-        i_time: int
-    ) -> ArrNz:
-    r"""
-    Computes flux of the tracer forcing.
-    
-    This function get the flux of the forcing at a certain time depending on the type of the
-    forcing, the flux being the derivative of the forcing along the depth.
-    
-    Parameters
-    ----------
-    tracer : str
-        Name of the tracer variable of the concerned forcing. One of {:code:`'t'`, :code:`'s'`,
-        :code:`'b'`, :code:`'pt`'}.
-    case_tracable : CaseTracable
-        Physical case which contains the forcings type and values.
-    grid : Grid
-        Vertical grid of the water column.
-    i_time : int
-        Index of the time iteration corresponding to the index in the forcing.
-    
-    Returns
-    -------
-    df : float :class:`~jax.Array` of shape (nz)
-        Flux of the forcing of the tracer. At each cell it represents the difference between the
-        input and the ouput flux.
-    
-    Raises
-    ------
-    ValueError
-        If the forcing type is not one of {'borders', 'constant', 'variable'}.
-    """
-    forcing = getattr(case_tracable, f'{tracer}_forcing')
-    forcing_type = getattr(case_tracable, f'{tracer}_forcing_type')
-    match forcing_type:
-        case 'borders':
-            df = add_boundaries(-forcing[0], jnp.zeros(grid.nz-2), forcing[1])
-        case 'constant':
-            df = forcing
-        case 'variable':
-            df = forcing[i_time, :]
-        case _:
-            mess = f'Forcing type of variable {tracer} should be one of' + \
-                "{'borders', 'constant', 'variable'}."
-            raise ValueError(mess)
-    return df
-
-
 def advance_tra_ed(
         state: State,
         akt: ArrNzp1,
@@ -541,7 +471,11 @@ def advance_tra_ed(
         return lambda t: getattr(t, tracer)
     for tracer in tracers:
         tra = getattr(state, tracer)
-        df = tracer_flux(tracer, case_tracable, state.grid, i_time)
+        forcing = getattr(case_tracable, f'{tracer}_forcing')
+        if getattr(case_tracable, f'{tracer}_for_var'):
+            df = forcing[i_time, :]
+        else:
+            df = forcing
         df = hz*tra + dt*df
         tra = diffusion_solver(akt, hz, df, dt)
         state = eqx.tree_at(get_pytree_fun(tracer), state, tra)

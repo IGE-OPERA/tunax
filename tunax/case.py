@@ -20,13 +20,12 @@ from tunax.functions import FloatJax, add_boundaries
 from tunax.space import Grid, ArrNz, ArrNtNz
 
 type ForcingType = (
+    float |
     tuple[float, float] |
     Callable[[float], float] |
     Callable[[float, float], float]
 )
 """Type that represent the different possible types of the forcings in :class:`Case`."""
-type ForcingArrayType = (tuple[FloatJax, FloatJax] | ArrNz | ArrNtNz)
-"""Type that represent the different possible types of the forcings in :class:`CaseTracable`."""
 
 _OMEGA = 7.292116e-05
 """Rotation rate of the Earth [rad.s-1]."""
@@ -83,41 +82,28 @@ class Case(eqx.Module):
         Meridional wind stress :math:`[\text{m}^{2} \cdot \text{s}^{-2}]`.
     vstr_btm : float, default=0.
         Meridional current stress at the bottom :math:`[\text{m}^{2} \cdot \text{s}^{-2}]`.
-    t_forcing : tuple of 2 floats or a function, optionnal
+    t_forcing : float, tuple 2 floats or a function, optionnal
         Description of the forcing of temperature (potentially no forcing if the variable is not
-        activated i.e. if :code:`'t'` is not in :code:`eos_tracers`). There are 3 cases :
-
+        activated i.e. if :code:`'t'` is not in :code:`eos_tracers`). The unit is in
+        :math:`[\text{K} \cdot \text{s}^{-1}]`. There are 4 cases depending on the
+        object type :
+        - **Surface forcing** : a float, forcing flux at the top of the water column.
         - **Border forcing** : tuple of 2 floats, the first one is the forcing at the bottom and the
-          second ont is the forcing at the top of the water column, the unit is in
-          :math:`[\text{K} \cdot \text{m} \cdot \text{s}^{-1}]`.
-        
+          second ont is the forcing at the top of the water column.
         - **Deep constant forcing** : function of signature float->float, the parameter is the depth
-          and the ouput is the value of the forcing at this depth in
-          :math:`[\text{K} \cdot \text{s}^{-1}]`. The values of the functions represent the flux of
-          the forcing (the derivative along the depth).)
-
+          and the ouput is the value of the forcing flux at this depth.
         - **Deep variable forcing** : function of signature (float, float)->float, the parameters
           are the depth and the time and the ouput is the value of the forcing at this depth and
-          this time in :math:`[\text{K} \cdot \text{s}^{-1}]`. The values of the functions represent
-          the flux of the forcing (the derivative along the depth).
-
-    s_forcing : tuple of 2 floats or a function, optionnal
-        Description of the forcing of salinity (potentially no forcing if the variable is not
-        activated i.e. if :code:`'s'` is not in :code:`eos_tracers`). There are the 3 same cases as
-        for the :code:`t_forcing`, and the units are
-        :math:`[\text{psu} \cdot \text{m} \cdot \text{s}^{-1}]` for the border forcing and
-        :math:`[\text{psu} \cdot \text{s}^{-1}]` for the other ones.
-    b_forcing : tuple of 2 floats or a function, optionnal
-        Description of the forcing of buoyancy (potentially no forcing if the variable is not
-        activated i.e. if :code:`'b'` is not in :code:`eos_tracers`). There are the 3 same cases as
-        for the :code:`t_forcing`, and the units are
-        :math:`[\text{m} \cdot \text{s}^{-1}]` for the border forcing and
-        :math:`[\text{s}^{-1}]` for the other ones.
-    pt_forcing : tuple of 2 floats or a function, optionnal
-        Description of the forcing of passive tracer (potentially no forcing if the variable is not
-        activated i.e. if :code:`do_pt` is not set). There are the 3 same cases as for the
-        :code:`t_forcing`, and the units are :math:`[\text{m} \cdot \text{s}^{-1}]`
-        for the border forcing and :math:`[\text{s}^{-1}]` for the other ones.
+          this time.
+    s_forcing : float, tuple 2 floats or a function, optionnal
+        Salinity forcing, same description than :code:`t_forcing`. The unit is in
+        :math:`[\text{psu} \cdot \text{s}^{-1}]`
+    b_forcing : float, tuple 2 floats or a function, optionnal
+        Buoyancy forcing, same description than :code:`t_forcing`. The unit is in
+        :math:`[\text{s}^{-1}]`.
+    pt_forcing : float, tuple 2 floats or a function, optionnal
+        Passive tracer forcing, same description than :code:`t_forcing`. The unit is in
+        :math:`[\text{s}^{-1}]`.
 
     """
 
@@ -139,10 +125,10 @@ class Case(eqx.Module):
     vstr_sfc: float = 0.
     vstr_btm: float = 0.
     # tracers forcings
-    t_forcing: ForcingType | None = eqx.field(default=None, static=True)
-    s_forcing: ForcingType | None = eqx.field(default=None, static=True)
-    b_forcing: ForcingType | None = eqx.field(default=None, static=True)
-    pt_forcing: ForcingType | None = eqx.field(default=None, static=True)
+    t_forcing: ForcingType | None = None
+    s_forcing: ForcingType | None = None
+    b_forcing: ForcingType | None = None
+    pt_forcing: ForcingType | None = None
 
     def set_lat(self, lat: float) -> Case:
         """
@@ -203,36 +189,31 @@ class CaseTracable(eqx.Module):
         cf. :attr:`Case.vstr_sfc`
     vstr_btm : float, default=0.
         cf. :attr:`Case.vstr_btm`
-    t_forcing : tuple of 2 floats or :class:`~jax.Array` (nz) or (nt, nz), optionnal
-        Description of the temperature forcing cf. :attr:`Case.t_forcing`, the type depends on the
-        forcing type :
-        - **Border forcing** : tuple of 2 floats, the first one is the forcing at the bottom and the
-          second one is the forcing at the top of the water column, the unit is in
-          :math:`[\text{K} \cdot \text{m} \cdot \text{s}^{-1}]`.
-        - **Deep constant forcing** : :class:`~jax.Array` of shape (nz) : the value of the forcing
-          function on the geometrical :class:`Grid` of the model. The values represent the forcing
-          flux, which is for each cell the difference between the forcing at the top of the cell and
-          the forcing at bottom.
-        - **Deep variable forcing** : :class:`~jax.Array` of shape (nt, nz) : the value of the
-          forcing function on the geometrical :class:`Grid` and the different iteration times of the
-          model. As for deep constant forcing, the values represent the flux of the forcing at every
-          time.
+    t_forcing : :class:`~jax.Array` of shape (nz) or (nt, nz), optionnal
+        Description of the temperature forcing cf. :attr:`Case.t_forcing` as a forcing flux. The
+        shape of the array depends on the forcing type :
+        - **constant forcing** : array of shape (nz) : the value of the forcing function on the
+          geometrical :class:`Grid` of the model.
+        - **Variable forcing** : array of shape (nt, nz) : the value of the forcing function on
+          the geometrical :class:`Grid` and the different iteration times of the model.
+        The surface, borders and "deep constant forcing" from the class :class:`Case` are
+        transformed in "constant forcing" array. And the space-time function forcing for the class
+        :class:`Case` are transformed in "variable forcing".
     s_forcing : tuple of 2 floats or :class:`~jax.Array` (nz) or (nt, nz), optionnal
         Same as :attr:`t_forcing` for Salinity.
     b_forcing : tuple of 2 floats or :class:`~jax.Array` (nz) or (nt, nz), optionnal
         Same as :attr:`t_forcing` for buoyancy.
-    pt_forcing : tuple of 2 floats or :class:`~jax.Array` (nz) or (nt, nz), optionnal
+    pt_forcing : :class:`~jax.Array` of shape (nz) or (nt, nz), optionnal
         Same as :attr:`t_forcing` for passive tracer.
-    t_forcing_type : str, optionnal
-        Description of the type of temperature forcing : :code:`'borders'` for **border forcing**,
-        :code:`'constant'` for **deep constant forcing** and :code:`'variable'` for **deep variable
-        forcing**
-    s_forcing_type : str, optionnal
-        Same as :attr:`t_forcing_type` for salinity.
-    b_forcing_type : str, optionnal
-        Same as :attr:`t_forcing_type` for buoyancy.
-    pt_forcing_type : str, optionnal
-        Same as :attr:`t_forcing_type` for passive tracer.
+    t_for_var : bool, default = False
+        Is the temperature forcing variable with time (is the shape of :attr:`t_forcing` (nt, nz) or
+        (nz,)).
+    s_for_var : bool, default = False
+        Same as :attr:`t_for_var` for salinity.
+    b_for_var : bool, default = False
+        Same as :attr:`t_for_var` for buoyancy.
+    pt_for_var : bool, default = False
+        Same as :attr:`t_for_var` for passive tracer.
 
     """
 
@@ -254,93 +235,23 @@ class CaseTracable(eqx.Module):
     vstr_sfc: float = 0.
     vstr_btm: float = 0.
     # tracers forcings
-    t_forcing: ForcingArrayType | None = None
-    s_forcing: ForcingArrayType | None = None
-    b_forcing: ForcingArrayType | None = None
-    pt_forcing: ForcingArrayType | None = None
-    t_forcing_type: str | None = eqx.field(default=None, static=True)
-    s_forcing_type: str | None = eqx.field(default=None, static=True)
-    b_forcing_type: str | None = eqx.field(default=None, static=True)
-    pt_forcing_type: str | None = eqx.field(default=None, static=True)
-
-    def tra_promote_borders_constant(self, tra: str, grid: Grid) -> CaseTracable:
-        """
-        Promote the dimension of a forcing from borders to constant.
-
-        It can be use to apply :func:`~jax.vmap` on :class:`SingleColumnModel` for batch computing.
-        The input :class:`CaseTracable` instance should have a borders forcing type and the ouput
-        instance will have deep constant forcing type.
-        
-        Parameters
-        ----------
-        tra : str
-            Name of the tracer variable of the concerned forcing. One of {:code:`'t'`, :code:`'s'`,
-            :code:`'b`', :code:`'pt`'}.
-        grid : Grid
-            Spatial grid to compute the constant forcing on.
-        
-        Returns
-        -------
-        case_tracable : CaseTracable
-            The :code:`self` object with the promoted forcing.
-        """
-        border_forcing = getattr(self, f'{tra}_forcing')
-        constant_forcing = add_boundaries(
-            -border_forcing[0], jnp.zeros(grid.nz-2), border_forcing[1]
-        )
-        case_tracable = eqx.tree_at(lambda t: getattr(t, f'{tra}_forcing'), self, constant_forcing)
-        dico = {f'{tra}_forcing_type': 'constant'}
-        case_tracable = replace(case_tracable, **dico)
-        return case_tracable
-
-    def tra_promote_borders_variable(self, tra: str, grid: Grid, nt: int) -> CaseTracable:
-        """
-        Promote the dimension of a forcing from borders to variable.
-
-        It can be use to apply :func:`~jax.vmap` on :class:`SingleColumnModel` for batch computing.
-        The input :class:`CaseTracable` instance should have a borders forcing type and the ouput
-        instance will have deep variable forcing type.
-        
-        Parameters
-        ----------
-        tra : str
-            Name of the tracer variable of the concerned forcing. One of {:code:`'t'`, :code:`'s'`,
-            :code:`'b`', :code:`'pt`'}.
-        grid : Grid
-            Spatial grid to compute the constant forcing on.
-        nt : int
-            Number of integration iterations of the model.
-        
-        Returns
-        -------
-        case_tracable : CaseTracable
-            The :code:`self` object with the promoted forcing.
-        """
-        border_forcing = getattr(self, f'{tra}_forcing')
-        constant_forcing = add_boundaries(
-            -border_forcing[0], jnp.zeros(grid.nz-2), border_forcing[1]
-        )
-        variable_forcing = jnp.tile(constant_forcing, (nt, 1))
-        case_tracable = eqx.tree_at(lambda t: getattr(t, f'{tra}_forcing'), self, variable_forcing)
-        dico = {f'{tra}_forcing_type': 'variable'}
-        case_tracable = replace(case_tracable, **dico)
-        return self
+    t_forcing: ArrNz | ArrNtNz | None = None
+    s_forcing: ArrNz | ArrNtNz | None = None
+    b_forcing: ArrNz | ArrNtNz | None = None
+    pt_forcing: ArrNz | ArrNtNz | None = None
+    t_for_var: bool = eqx.field(default=False, static=True)
+    s_for_var: bool = eqx.field(default=False, static=True)
+    b_for_var: bool = eqx.field(default=False, static=True)
+    pt_for_var: bool = eqx.field(default=False, static=True)
 
     def tra_promote_constant_variable(self, tra: str, nt: int) -> CaseTracable:
         """
-        Promote the dimension of a forcing from borders to constant.
-
-        It can be use to apply :func:`~jax.vmap` on :class:`~model.SingleColumnModel` for batch
-        computing. The input :class:`CaseTracable` instance should have a constant forcing type and
-        the ouput instance will have deep variable forcing type.
+        Promote the dimension of a forcing from constant to variable.
         
         Parameters
         ----------
-        tra : str
-            Name of the tracer variable of the concerned forcing. One of {:code:`'t'`, :code:`'s'`,
-            :code:`'b'`, :code:`'pt`'}.
-        grid : Grid
-            Spatial grid to compute the constant forcing on.
+        tra : str, {:code:`'t'`, :code:`'s'`, :code:`'b'`, :code:`'pt`'}
+            Name of the tracer variable of the concerned forcing.
         nt : int
             Number of integration iterations of the model.
         
@@ -352,6 +263,5 @@ class CaseTracable(eqx.Module):
         constant_forcing = getattr(self, f'{tra}_forcing')
         variable_forcing = jnp.tile(constant_forcing, (nt, 1))
         case_tracable = eqx.tree_at(lambda t: getattr(t, f'{tra}_forcing'), self, variable_forcing)
-        dico = {f'{tra}_forcing_type': 'variable'}
-        case_tracable = replace(case_tracable, **dico)
-        return self
+        case_tracable = replace(case_tracable, {f'{tra}_for_var': True})
+        return case_tracable

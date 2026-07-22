@@ -23,8 +23,7 @@ References
     <https://hal.science/hal-04439113>`_.
 .. [3] A. Zhou, L. Hawkins and P. Gentine. Proof-of-concept: Using ChatGPT to Translate and
     Modernize an Earth System Model from Fortran to Python/JAX (2024). url :
-    `arxiv.org/abs/2405.00018 <https://arxiv.org/abs/2405.00018>`_.
-    
+    `arxiv.org/abs/2405.00018 <https://arxiv.org/abs/2405.00018>`_. 
 """
 
 from __future__ import annotations

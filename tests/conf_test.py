@@ -8,9 +8,7 @@ References
 [1] Wagner, G. L. (2026). Reference Large-Eddy Simulations of the upper-ocean boundary layer from
     the CATKE calibration suite (Wagner et al., 2025) (Version 1.0.0) [Dataset]. Zenodo.
     https://doi.org/10.5281/zenodo.20057136
-
 """
-
 
 from pathlib import Path
 from dataclasses import replace

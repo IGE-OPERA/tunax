@@ -5,7 +5,7 @@ This module only contains a constant variable which lists all the available clos
 obtained by the prefix :code:`tunax.closures_registry.` or directly by :code:`tunax.`.
 
 Attributes
-==========
+----------
 CLOSURES_REGISTRY : dict[str, Closure]
     This variable is a dictionnary whose keys are the name of the closures (they must be exaclty the
     same than :attr:`~closure.Closure.name`), and whose values are the corresponding
@@ -22,7 +22,6 @@ CLOSURES_REGISTRY : dict[str, Closure]
     The current available closures are :
     
     - :code:`k-epsilon` for :math:`k-\varepsilon` closure cf. :mod:`closures.k_epsilon`
-
 """
 
 from tunax.closure import Closure

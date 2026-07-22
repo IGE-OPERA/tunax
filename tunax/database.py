@@ -8,7 +8,6 @@ case which represent a measurment or a reference as a Large Eddy Simulation (LES
 by *observations* (:class:`Obs`), we refer to the union of a trajectory and the Tunax model which
 corresponds to it. These classes can be obtained by the prefix :code:`tunax.database.` or directly
 by :code:`tunax.`.
-
 """
 
 from __future__ import annotations

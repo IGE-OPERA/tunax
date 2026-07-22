@@ -4,7 +4,6 @@ Abstraction usefull for the calibration of the closures.
 This module contains the classes :class:`FittableParameter` and :class:`FittableParametersSet` which
 are used to make a link between the optimization part and the closures structures. These class can
 be obtained by the prefix :code:`tunax.fitter.` or directly by :code:`tunax.`.
-
 """
 
 from __future__ import annotations

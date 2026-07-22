@@ -5,7 +5,6 @@ This module contains the objects that are used in Tunax to describe the geometry
 in :class:`Grid`, the variables of the water column at one time-step in :class:`State` and the time-
 series of the model computation in :class:`Trajectory`. These classes can be obtained by the
 prefix :code:`tunax.space.` or directly by :code:`tunax.`.
-
 """
 
 from __future__ import annotations

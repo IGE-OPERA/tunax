@@ -3,7 +3,6 @@ Importation of Tunax classes and functions for shortcuts.
 
 """
 
-
 import jax
 jax.config.update('jax_enable_x64', True)
 

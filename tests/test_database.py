@@ -1,6 +1,5 @@
 """
-Tests for the module tunax.database
-
+Tests for the module tunax.database.
 """
 
 from pathlib import Path

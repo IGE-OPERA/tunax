@@ -3,7 +3,6 @@ Usefull calculation functions.
 
 The functions in this module are supposed to be used in various other modules. They can be called by
 the prefix :code:`tunax.functions.` or directly by :code:`tunax.`.
-
 """
 
 import jax.numpy as jnp

@@ -5,7 +5,6 @@ This module contains the :class:`Case` class which is the one used to describe t
 the forcings of a model. It also contains the :class:`CaseTracable` which is a variation of the
 first classe which works better with JAX specificities. This classes can be obtained by the prefix
 :code:`tunax.case.` or directly by :code:`tunax.`.
-
 """
 
 from __future__ import annotations
@@ -16,8 +15,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jax import device_get
 
-from tunax.functions import FloatJax, add_boundaries
-from tunax.space import Grid, ArrNz, ArrNtNz
+from tunax.space import ArrNz, ArrNtNz
 
 type ForcingType = (
     float |
@@ -263,5 +261,5 @@ class CaseTracable(eqx.Module):
         constant_forcing = getattr(self, f'{tra}_forcing')
         variable_forcing = jnp.tile(constant_forcing, (nt, 1))
         case_tracable = eqx.tree_at(lambda t: getattr(t, f'{tra}_forcing'), self, variable_forcing)
-        case_tracable = replace(case_tracable, {f'{tra}_for_var': True})
+        case_tracable = replace(case_tracable, **{f'{tra}_for_var': True})
         return case_tracable

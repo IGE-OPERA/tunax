@@ -16,7 +16,6 @@ References
 .. [2] A. Zhou, L. Hawkins and P. Gentine. Proof-of-concept: Using ChatGPT to Translate and
     Modernize an Earth System Model from Fortran to Python/JAX (2024). url :
     `arxiv.org/abs/2405.00018 <https://arxiv.org/abs/2405.00018>`_.
-
 """
 
 from __future__ import annotations
@@ -28,7 +27,7 @@ import jax.numpy as jnp
 from jax import lax, jit, vmap
 
 from tunax.case import Case, CaseTracable
-from tunax.space import Grid, State, Trajectory, ArrNz, ArrNzp1, ArrNt, VARIABLE_NAMES
+from tunax.space import State, Trajectory, ArrNz, ArrNzp1, ArrNt, VARIABLE_NAMES
 from tunax.functions import FloatJax, tridiag_solve, add_boundaries
 from tunax.closure import ClosureParametersAbstract, ClosureStateAbstract, Closure
 from tunax.closures_registry import CLOSURES_REGISTRY

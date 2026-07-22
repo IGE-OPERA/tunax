@@ -6,7 +6,6 @@ column at a specific time. The purpose of Tunax is to calibrate the parameters o
 This module contains the abstract classes required to define a closure, which is done in the folder
 :code:`closures/`. These classes can be obtained by the prefix :code:`tunax.closure.` or directly by
 :code:`tunax.`.
-
 """
 
 from abc import ABC

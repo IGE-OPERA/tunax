@@ -586,7 +586,7 @@ def compute_eos(state: State, case: CaseTracable) -> tuple[ArrNzp1, ArrNz]:
             raise ValueError("The attribute Case.eos_tracers must be one of {'t', 's', 'ts', 'b'}.")
     cff = 1./(state.grid.zr[1:]-state.grid.zr[:-1])
     bvf_in = - cff*case.grav/rho0 * (rho[1:]-rho[:-1])
-    bvf = add_boundaries(jnp.array([0.]), bvf_in, bvf_in[-1])
+    bvf = add_boundaries(0., bvf_in, bvf_in[-1])
     return rho, bvf
 
 
@@ -854,9 +854,9 @@ def advance_turb(
     f_btm = jnp.where(dir_btm, btm_bc, hz[0]*btm_bc)
 
     # vectors rassembly
-    a = add_boundaries(jnp.array([0.]), a_in, a_sfc)
+    a = add_boundaries(0., a_in, a_sfc)
     b = add_boundaries(b_btm, b_in, b_sfc)
-    c = add_boundaries(c_btm, c_in, jnp.array([0.]))
+    c = add_boundaries(c_btm, c_in, 0.)
     f = add_boundaries(f_btm, f_in, f_sfc)
 
     # solve tridiagonal problem

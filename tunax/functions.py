@@ -62,8 +62,8 @@ def tridiag_solve(
     init = f[0]/b[0], -c[0]/b[0]
     xs = jnp.stack([a, b, c, f])[:, 1:].T
     _, (f, q) = lax.scan(forward_scan_scal, init, xs)
-    f = jnp.concat([init[0], f])
-    q = jnp.concat([init[1], q])
+    f = jnp.concat([jnp.atleast_1d(init[0]), f])
+    q = jnp.concat([jnp.atleast_1d(init[1]), q])
 
     def reverse_scan_scal(carry: FloatJax, x: Float[Array, '2']) -> tuple[FloatJax, FloatJax]:
         q_rev, f_rev = x
@@ -72,7 +72,7 @@ def tridiag_solve(
     init = f[-1]
     xs = jnp.stack([q[::-1], f[::-1]])[:, 1:].T
     _, x = lax.scan(reverse_scan_scal, init, xs)
-    x = jnp.concat([init, x])
+    x = jnp.concat([jnp.atleast_1d(init), x])
 
     return x[::-1]
 
@@ -90,22 +90,19 @@ def add_boundaries(
 
     Parameters
     ----------
-    vec_btm : float or :class:`~jax.Array` of shape ().
+    vec_btm : float or :class:`~jax.Array` of shape () or (1,).
         Bottom value of the vector.
     vec_in : float :class:`~jax.Array` of shape (n-2)
         Middle values of the vector.
-    vec_sfc : float or :class:`~jax.Array` of shape ().
-        Surface value of the vector, must have the same type than :code:`vec_btm`.
+    vec_sfc : float or :class:`~jax.Array` of shape () or (1,).
+        Surface value of the vector.
 
     Returns
     -------
     vec : float :class:`~jax.Array` of shape (n)
         Concatenated vector.
     """
-    if isinstance(vec_btm, float):
-        return jnp.concat([jnp.array([vec_btm]), vec_in, jnp.array([vec_sfc])])
-    else:
-        return jnp.concat([vec_btm, vec_in, vec_sfc])
+    return jnp.concat([jnp.atleast_1d(vec_btm), vec_in, jnp.atleast_1d(vec_sfc)])
 
 
 def _format_to_single_line(text: str) -> str:

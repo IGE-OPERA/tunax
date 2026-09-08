@@ -19,6 +19,8 @@ References
 """
 
 from __future__ import annotations
+from collections.abc import Callable
+from typing import cast
 import inspect
 
 import equinox as eqx
@@ -135,12 +137,13 @@ class SingleColumnModel(eqx.Module):
             if isinstance(forcing, tuple):
                 forcing = add_boundaries(-forcing[0], jnp.zeros(grid.nz-2), forcing[1])
             elif callable(forcing) and len(inspect.signature(forcing).parameters) == 1:
-                vec_fun = vmap(forcing)
+                vec_fun = cast(Callable[[ArrNz], ArrNz], vmap(forcing))
                 forcing = grid.hz*vec_fun(grid.zr)
             elif callable(forcing) and len(inspect.signature(forcing).parameters) == 2:
+                vmap_fun = jax.vmap(jax.vmap(forcing, in_axes=(None, 0)), in_axes=(0, None))
+                vmap_fun = cast(Callable[[ArrNz, ArrNz], ArrNz], vmap_fun)
                 time = jnp.linspace(0, (self.nt-1)*self.dt, self.nt)
-                zr_grid, time_grid = jnp.meshgrid(grid.zr, time)
-                forcing = grid.hz*forcing(zr_grid, time_grid)
+                forcing = grid.hz*vmap_fun(grid.zr, time)
             case_attributes[tra_attr] = forcing
         self.case_tracable = CaseTracable(**case_attributes)
 
@@ -202,7 +205,8 @@ class SingleColumnModel(eqx.Module):
             state, closure_state, dt, closure_parameters, case_tracable
         )
         # advance tracers
-        i_time = int(time/self.dt)
+        i_time_float = jnp.asarray(time/self.dt)
+        i_time = i_time_float.astype(int)
         state = advance_tra_ed(state, closure_state.akt, dt, case_tracable, i_time)
         # advance velocities
         state = advance_dyn_cor_ed(state, closure_state.akv, dt, case_tracable)
@@ -593,9 +597,9 @@ def diffusion_solver(
     b_sfc = hz[-1] - a_sfc
 
     # concatenations
-    a = add_boundaries(jnp.array([0.]), a_in, a_sfc)
+    a = add_boundaries(0., a_in, a_sfc)
     b = add_boundaries(b_btm, b_in, b_sfc)
-    c = add_boundaries(c_btm, c_in, jnp.array([0.]))
+    c = add_boundaries(c_btm, c_in, 0.)
 
     x = tridiag_solve(a, b, c, f)
 

@@ -8,7 +8,7 @@ authors:
     given-names: Julien
     orcid: https://orcid.org/0000-0002-6882-2938
 title: "Tunax"
-version: 0.2.11
+version: 0.2.12
 date-released: 2026-08-28
 doi: "10.5281/zenodo.22143347"
 url: "https://github.com/IGE-OPERA/tunax"
